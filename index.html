@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deep Abyss Challenge</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+  <div id="stage">
+    <div class="sky-glow"></div>
+    <div class="water-caustic"></div>
+    <canvas id="sea"></canvas>
+
+    <header class="hud-top">
+      <div class="hud-left metal">
+        <div class="points-row">
+          <span class="label">POINTS</span>
+          <span id="points" class="value gold-text">10247</span>
+        </div>
+        <div class="mini-row">
+          <span>LVL <b id="level">5</b></span>
+          <span>TIME <b id="time">02:23</b></span>
+        </div>
+      </div>
+      <div class="hud-right">
+        <div class="currency metal">
+          <span class="coin-icon"></span>
+          <b id="gold">244791</b>
+        </div>
+        <div class="currency metal gem">
+          <span class="gem-icon"></span>
+          <b id="gems">2</b>
+        </div>
+        <button id="btn-pause" class="gear-btn" title="Pause">❚❚</button>
+      </div>
+    </header>
+
+    <aside class="panel shop metal">
+      <h2>EQUIPMENT</h2>
+      <div id="rods" class="item-row"></div>
+      <h2>BOATS</h2>
+      <div id="boats" class="item-row"></div>
+      <div class="equipped">
+        <div>
+          <span>Current Rod</span>
+          <b id="cur-rod">Basic Rod</b>
+        </div>
+        <div>
+          <span>Current Boat</span>
+          <b id="cur-boat">Rowboat</b>
+        </div>
+      </div>
+    </aside>
+
+    <aside class="panel bait metal">
+      <h2>BAIT</h2>
+      <div id="baits" class="bait-list"></div>
+    </aside>
+
+    <div class="banner">
+      <span>BINGE ON THE BEACH! DEEP ABYSS CHALLENGE</span>
+    </div>
+
+    <div class="controls">
+      <button id="btn-bet" class="bet-btn">
+        <small>BET</small>
+        <strong id="bet-amt">500</strong>
+      </button>
+      <button id="btn-cast" class="cast-btn">CAST</button>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <div id="catch-card" class="catch-card hidden"></div>
+    <div id="pause-mask" class="mask hidden">
+      <div class="pause-box metal">
+        <h2>PAUSED</h2>
+        <p>深渊仍在等待你的下一钩</p>
+        <button id="btn-resume" class="cast-btn">RESUME</button>
+      </div>
+    </div>
+    <div id="end-mask" class="mask hidden">
+      <div class="pause-box metal">
+        <h2>TIME UP</h2>
+        <p id="end-summary"></p>
+        <button id="btn-again" class="cast-btn">PLAY AGAIN</button>
+      </div>
+    </div>
+  </div>
+  <script src="js/game.js"></script>
+</body>
+</html>
