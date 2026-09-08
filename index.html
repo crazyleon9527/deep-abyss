@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=18" />
+  <link rel="stylesheet" href="css/game.css?v=29" />
 </head>
 <body>
   <div id="stage">
@@ -18,21 +18,22 @@
     <header class="hud-top">
       <div class="hud-left copper">
         <div class="points-block">
-          <span class="label">POINTS</span>
+          <span class="label">积分</span>
           <span id="points" class="value cyan-text">0</span>
         </div>
         <div class="chip-row">
-          <div class="chip shield">LVL <b id="level">1</b></div>
-          <div class="chip clock">TIME <b id="time">02:00</b></div>
+          <div class="chip shield">目标 <b id="goal-hud">○ 0</b></div>
+          <div class="chip clock">时间 <b id="time">02:00</b></div>
+          <div class="chip weather">海况 <b id="wx-hud">晴 · 平潮</b></div>
         </div>
       </div>
       <div class="hud-right">
-        <div class="gear-lvl copper">LVL <b id="level-right">1</b></div>
+        <div class="gear-lvl copper">护钩 <b id="charm-hud">关</b></div>
         <div class="wallet copper">
           <span class="coin-icon"></span>
-          <b id="gold">80,000</b>
+          <b id="gold">4,500</b>
           <span class="gem-icon"></span>
-          <b id="gems">5</b>
+          <b id="gems">4</b>
         </div>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
       </div>
@@ -40,22 +41,30 @@
 
     <div class="drawer left" id="drawer-shop">
       <aside class="panel shop copper">
-        <h2>EQUIPMENT</h2>
+        <h2>鱼竿</h2>
         <div id="rods" class="item-row"></div>
-        <h2>BOATS</h2>
+        <h2>船只</h2>
         <div id="boats" class="item-row"></div>
         <div class="equipped">
           <div>
-            <span>Current Rod</span>
-            <b id="cur-rod">Basic</b>
+            <span>当前竿</span>
+            <b id="cur-rod">稳竿</b>
           </div>
           <div>
-            <span>Current Boat</span>
-            <b id="cur-boat">Rowboat</b>
+            <span>当前船</span>
+            <b id="cur-boat">小艇</b>
           </div>
           <div class="rent-cell">
             <span>本竿租借</span>
             <b id="rent-fee">0</b>
+          </div>
+          <div class="rent-cell">
+            <span>咬钩</span>
+            <b id="bite-hud">天气·船·竿·饵·潮</b>
+          </div>
+          <div class="rent-cell">
+            <span>移船</span>
+            <b>← → 开船，镜头跟随</b>
           </div>
         </div>
       </aside>
@@ -64,8 +73,10 @@
 
     <div class="drawer right" id="drawer-bait">
       <aside class="panel bait copper">
-        <h2>BAIT</h2>
+        <h2>鱼饵</h2>
         <div id="baits" class="bait-list"></div>
+        <h2>天气</h2>
+        <div id="wx-items" class="bait-list"></div>
       </aside>
       <button class="drawer-tab" id="tab-bait" type="button">鱼饵</button>
     </div>
@@ -73,15 +84,35 @@
     <div id="fight-hint" class="fight-hint hidden">拉杆！</div>
     <div class="streak" id="streak" hidden>COMBO x1</div>
 
-    <div class="banner">BINGE ON THE BEACH! DEEP ABYSS CHALLENGE</div>
+    <div id="steer-layer" class="steer-layer"></div>
+    <div class="steer">
+      <button id="btn-left" type="button" aria-label="船向左">◀</button>
+      <button id="btn-right" type="button" aria-label="船向右">▶</button>
+    </div>
     <div class="controls">
+      <button id="btn-charm" class="charm-btn" type="button">
+        <small>护钩</small>
+        <strong>1 宝石</strong>
+      </button>
+      <button id="btn-sonar" class="charm-btn sonar-btn" type="button">
+        <small>探鱼</small>
+        <strong>1 宝石</strong>
+      </button>
       <button id="btn-bet" class="bet-btn" type="button">
-        <small>BET</small>
-        <strong id="bet-amt">500</strong>
+        <small>赌注</small>
+        <strong id="bet-amt">100</strong>
+      </button>
+      <button id="btn-x3" class="x3-btn" type="button">
+        <small>同时</small>
+        <strong>x3</strong>
       </button>
       <div class="cast-wrap">
-        <button id="btn-cast" class="cast-btn" type="button">CAST</button>
-        <span id="cast-fee">本竿 750</span>
+        <button id="btn-cast" class="cast-btn" type="button">下钩</button>
+        <div id="cast-fee" class="cast-cost">
+          <b id="cast-total">本竿 118</b>
+          <small id="cast-parts">饵 18 · 租 0 · 注 100</small>
+          <span id="cast-odds">空钩亏 118 · 对口约 +70</span>
+        </div>
       </div>
     </div>
 
@@ -89,19 +120,28 @@
     <div id="catch-card" class="catch-card hidden"></div>
     <div id="pause-mask" class="mask hidden">
       <div class="pause-box copper">
-        <h2>PAUSED</h2>
-        <p>深渊仍在等待你的下一钩</p>
-        <button id="btn-resume" class="cast-btn">RESUME</button>
+        <h2>暂停</h2>
+        <p>深渊还在等你的下一钩</p>
+        <button id="btn-resume" class="cast-btn">继续</button>
       </div>
     </div>
     <div id="end-mask" class="mask hidden">
       <div class="pause-box copper">
-        <h2>TIME UP</h2>
+        <h2>时间到</h2>
         <p id="end-summary"></p>
-        <button id="btn-again" class="cast-btn">PLAY AGAIN</button>
+        <p id="end-log" class="end-log"></p>
+        <button id="btn-again" class="cast-btn">再来一局</button>
       </div>
     </div>
+    <div id="help-mask" class="help-tip copper hidden">
+      <p>左右开船，或点海面把船开过去</p>
+      <p>鱼饵要配得上船的水深，否则不能下钩</p>
+      <p>咬钩看天气、船只、鱼竿、鱼饵和潮位，对口才容易上钩</p>
+      <p>x3 同时下三杆，饵和赌注也按三倍扣</p>
+      <p>右栏天气道具可立刻换海况；蛙雨瓶会召来大鱼群，这段等待必定咬钩</p>
+      <button id="btn-help" class="cast-btn" type="button">知道了</button>
+    </div>
   </div>
-  <script src="js/game.js?v=20"></script>
+  <script src="js/game.js?v=35"></script>
 </body>
 </html>
