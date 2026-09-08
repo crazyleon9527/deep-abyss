@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=29" />
+  <link rel="stylesheet" href="css/game.css?v=32" />
 </head>
 <body>
   <div id="stage">
@@ -14,6 +14,7 @@
     <div class="water-caustic"></div>
     <canvas id="sea"></canvas>
     <div class="vignette"></div>
+    <div id="steer-layer" class="steer-layer"></div>
 
     <header class="hud-top">
       <div class="hud-left copper">
@@ -28,6 +29,11 @@
         </div>
       </div>
       <div class="hud-right">
+        <div class="sonar-meter copper">
+          <span>声呐碎片</span>
+          <div class="bar"><i id="sonar-fill"></i></div>
+          <b id="sonar-txt">0%</b>
+        </div>
         <div class="gear-lvl copper">护钩 <b id="charm-hud">关</b></div>
         <div class="wallet copper">
           <span class="coin-icon"></span>
@@ -35,6 +41,8 @@
           <span class="gem-icon"></span>
           <b id="gems">4</b>
         </div>
+        <button id="btn-hub" class="hub-btn" type="button">回流</button>
+        <button id="btn-rank" class="hub-btn rank-btn" type="button">冲榜</button>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
       </div>
     </header>
@@ -81,10 +89,30 @@
       <button class="drawer-tab" id="tab-bait" type="button">鱼饵</button>
     </div>
 
-    <div id="fight-hint" class="fight-hint hidden">拉杆！</div>
+    <div class="jackpots copper" id="jackpots">
+      <div class="jp mini"><small>MINI 小</small><b id="jp-mini">12,840</b></div>
+      <div class="jp minor"><small>MINOR 中</small><b id="jp-minor">86,200</b></div>
+      <div class="jp major"><small>MAJOR 大</small><b id="jp-major">428,600</b></div>
+      <div class="jp grand"><small>GRAND 巨</small><b id="jp-grand">1,864,200</b></div>
+    </div>
+    <div class="ticker copper" id="ticker">
+      <div class="ticker-track" id="ticker-track"></div>
+    </div>
+    <div id="fight-hint" class="fight-hint hidden">上钩了</div>
     <div class="streak" id="streak" hidden>COMBO x1</div>
 
-    <div id="steer-layer" class="steer-layer"></div>
+    <div class="feature-row">
+      <button id="btn-kraken" type="button">
+        <small>买特色</small>
+        <strong>海怪 50x</strong>
+        <span id="kraken-cost">5,000</span>
+      </button>
+      <button id="btn-frenzy" type="button">
+        <small>买特色</small>
+        <strong>狂钩 100x</strong>
+        <span id="frenzy-cost">10,000</span>
+      </button>
+    </div>
     <div class="steer">
       <button id="btn-left" type="button" aria-label="船向左">◀</button>
       <button id="btn-right" type="button" aria-label="船向右">▶</button>
@@ -116,6 +144,7 @@
       </div>
     </div>
 
+    <div id="win-fx" class="win-fx hidden"><b id="win-label"></b></div>
     <div id="toast" class="toast hidden"></div>
     <div id="catch-card" class="catch-card hidden"></div>
     <div id="pause-mask" class="mask hidden">
@@ -133,15 +162,63 @@
         <button id="btn-again" class="cast-btn">再来一局</button>
       </div>
     </div>
+    <div id="rank-mask" class="mask hidden">
+      <div class="hub-box copper">
+        <h2>周末深海捕鱼王</h2>
+        <p class="hub-lead">本轮按有效投注额冲榜 · 最高倍作并列 · <b id="rank-left">00:00</b></p>
+        <p class="hub-lead">奖池 <b id="rank-pool">28,000</b> · 你的注额 <b id="rank-you">0</b> · 最高 <b id="rank-mult">0x</b></p>
+        <div id="rank-list" class="rank-list"></div>
+        <button id="btn-rank-close" class="cast-btn" type="button">返回海面</button>
+      </div>
+    </div>
+    <div id="share-mask" class="mask hidden">
+      <div class="share-box copper">
+        <h2>超高倍高光</h2>
+        <canvas id="share-art" width="640" height="360"></canvas>
+        <p id="share-caption">500x 可一键炫耀</p>
+        <div class="share-row">
+          <a id="share-tg" target="_blank" rel="noopener">Telegram</a>
+          <a id="share-wa" target="_blank" rel="noopener">WhatsApp</a>
+          <button id="share-sys" type="button">系统分享</button>
+          <button id="share-copy" type="button">复制文案</button>
+          <button id="share-dl" type="button">保存图片</button>
+        </div>
+        <button id="btn-share-close" class="cast-btn" type="button">继续钓</button>
+      </div>
+    </div>
+    <div id="hub-mask" class="mask hidden">
+      <div class="hub-box copper">
+        <h2>深海回流</h2>
+        <p class="hub-lead">小注也挂着百万奖池 · 每日回来领饵</p>
+        <div class="check-row" id="check-row"></div>
+        <button id="btn-checkin" class="cast-btn" type="button">领取今日签到</button>
+        <div class="chest-row">
+          <button id="btn-chest4" type="button"><small>4 小时箱</small><strong id="chest4-txt">可领</strong></button>
+          <button id="btn-chest8" type="button"><small>8 小时箱</small><strong id="chest8-txt">可领</strong></button>
+        </div>
+        <h3>今日任务</h3>
+        <div id="quest-list" class="quest-list"></div>
+        <h3>深渊通行证</h3>
+        <div class="bp-wrap">
+          <span id="bp-lv">1 级</span>
+          <div class="bp-bar"><i id="bp-fill"></i></div>
+          <b id="bp-xp">0</b>
+        </div>
+        <div id="bp-tiers" class="bp-tiers"></div>
+        <button id="btn-hub-close" class="cast-btn" type="button">返回海面</button>
+      </div>
+    </div>
     <div id="help-mask" class="help-tip copper hidden">
       <p>左右开船，或点海面把船开过去</p>
       <p>鱼饵要配得上船的水深，否则不能下钩</p>
       <p>咬钩看天气、船只、鱼竿、鱼饵和潮位，对口才容易上钩</p>
       <p>x3 同时下三杆，饵和赌注也按三倍扣</p>
-      <p>右栏天气道具可立刻换海况；蛙雨瓶会召来大鱼群，这段等待必定咬钩</p>
+      <p>50x 海怪 / 100x 狂钩可直购奖励关；声呐槽蓄满下一竿暴击</p>
+      <p>回流里有四级奖池、每日签到、定时宝箱和通行证任务</p>
+      <p>海面跑马灯是全服派彩，冲榜按本轮下注额排名，500x 会弹出分享卡</p>
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=35"></script>
+  <script src="js/game.js?v=39"></script>
 </body>
 </html>

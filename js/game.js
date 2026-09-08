@@ -146,6 +146,56 @@
     timeLeft: 120,
     bait: "hook",
   };
+  const META_KEY = "abyss-meta-v1";
+  const JACKS = [
+    { id: "mini", seed: 12840, idle: 16, rate: 0.045, odds: 0.03, name: "MINI 小奖", fx: 12 },
+    { id: "minor", seed: 86200, idle: 58, rate: 0.07, odds: 0.01, name: "MINOR 中奖", fx: 60 },
+    { id: "major", seed: 428600, idle: 190, rate: 0.1, odds: 0.0035, name: "MAJOR 大奖", fx: 220 },
+    { id: "grand", seed: 1864200, idle: 920, rate: 0.15, odds: 0.001, name: "GRAND 巨奖", fx: 1200 },
+  ];
+  const JP_SEED = Object.fromEntries(JACKS.map((j) => [j.id, j.seed]));
+  const CHEST = { chest4: { ms: 4 * 3600 * 1000, gold: 90, gems: 0, bait: 2, msg: "4 小时箱：金币和免费饵" }, chest8: { ms: 8 * 3600 * 1000, gold: 220, gems: 1, bait: 3, msg: "8 小时箱：金、宝石、免费饵" } };
+  const CHECK_REW = [
+    { gold: 80, bait: 0, gems: 0 },
+    { gold: 0, bait: 2, gems: 1 },
+    { gold: 160, bait: 0, gems: 0 },
+    { gold: 0, bait: 0, gems: 2 },
+    { gold: 280, bait: 2, gems: 0 },
+    { gold: 120, bait: 0, gems: 2 },
+    { gold: 600, bait: 3, gems: 1 },
+  ];
+  const QUESTS = [
+    { id: "eel", need: 30, xp: 25, gold: 180, label: "今日钓起 30 条电鳗（暗鳗）" },
+    { id: "master", need: 3, xp: 18, gold: 120, label: "单局使用 3 次金竿（机械钩）" },
+    { id: "casts", need: 15, xp: 12, gold: 80, label: "今日下钩 15 次" },
+    { id: "big", need: 1, xp: 20, gold: 150, label: "今日打出一次 10x 派彩" },
+  ];
+  const BP = [
+    { xp: 0, gold: 60, label: "饵金" },
+    { xp: 20, gem: 1, label: "宝石" },
+    { xp: 45, gold: 140, skin: "cyan", label: "磷光线" },
+    { xp: 80, gold: 200, label: "200金" },
+    { xp: 130, gem: 1, skin: "gold", label: "金钩皮" },
+    { xp: 190, gold: 360, label: "360金" },
+    { xp: 260, gem: 2, label: "2宝石" },
+    { xp: 340, gold: 520, label: "500金" },
+  ];
+  const SHARE_X = 500;
+  const TOURNEY_MS = 8 * 60 * 1000;
+  const TOURNEY_PRIZE = [5000, 1800, 700];
+  const TICKER_NAMES = ["玩家***8", "阿***龙", "深***9", "V***88", "海***K", "金***7", "夜***钩", "湾***3"];
+  const TICKER_FISH = ["远古巨鲨", "利维坦", "巨口鱼", "灯鲨", "巨鱿", "灯笼鮟鱇"];
+  const TICKER_ROD = ["黄金鱼竿", "金竿", "快竿", "稳竿"];
+  const TOURNEY_BOTS = [
+    { id: "b0", name: "龙***7" },
+    { id: "b1", name: "海***K" },
+    { id: "b2", name: "夜***9" },
+    { id: "b3", name: "湾***3" },
+    { id: "b4", name: "金***钩" },
+    { id: "b5", name: "雾***8" },
+    { id: "b6", name: "潮***V" },
+    { id: "b7", name: "渊***1" },
+  ];
 
   function freshState() {
     return {
@@ -176,6 +226,10 @@
       combo: 0,
       luckyHook: false,
       sonar: 0,
+      sonarPow: 0,
+      critArmed: false,
+      critSpent: false,
+      bonus: null,
       skipCut: false,
       slipBoost: 0,
       castBoost: 0,
@@ -201,11 +255,414 @@
       boatFacing: 1,
       swapFlash: 0,
       dirtyHud: true,
+      sessionMaster: 0,
+      modal: null,
     };
   }
 
   const state = freshState();
   let sawHelp = false;
+  const jpShow = { mini: JP_SEED.mini, minor: JP_SEED.minor, major: JP_SEED.major, grand: JP_SEED.grand };
+
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  function yesterdayKey() {
+    const d = new Date(Date.now() - 86400000);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  function defaultMeta() {
+    return {
+      jp: { ...JP_SEED },
+      day: todayKey(),
+      checkDay: "",
+      streak: 0,
+      chest4: 0,
+      chest8: 0,
+      freeBait: 0,
+      q: { eel: 0, casts: 0, big: 0 },
+      claimed: {},
+      bpXp: 0,
+      bpGot: {},
+      skin: "",
+      tourneySlot: -1,
+      tourneyStake: 0,
+      tourneyMult: 0,
+      tourneyClaimed: false,
+    };
+  }
+  function loadMeta() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(META_KEY) || "null");
+      const base = defaultMeta();
+      if (!raw || typeof raw !== "object") return base;
+      return {
+        ...base,
+        ...raw,
+        jp: { ...JP_SEED, ...(raw.jp || {}) },
+        q: { eel: 0, casts: 0, big: 0, ...(raw.q || {}) },
+        claimed: { ...(raw.claimed || {}) },
+        bpGot: { ...(raw.bpGot || {}) },
+      };
+    } catch (_) {
+      return defaultMeta();
+    }
+  }
+  const meta = loadMeta();
+  jpShow.mini = meta.jp.mini;
+  jpShow.minor = meta.jp.minor;
+  jpShow.major = meta.jp.major;
+  jpShow.grand = meta.jp.grand;
+  let saveMetaAt = 0;
+  function saveMeta() {
+    try {
+      localStorage.setItem(META_KEY, JSON.stringify(meta));
+    } catch (_) {}
+  }
+  function rollDay() {
+    const day = todayKey();
+    if (meta.day !== day) {
+      meta.day = day;
+      meta.q = { eel: 0, casts: 0, big: 0 };
+      meta.claimed = {};
+      saveMeta();
+    }
+  }
+  rollDay();
+  const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+  const modalOn = (id) => state.modal === id;
+  function setModal(id) {
+    state.modal = id;
+    state.paused = !!id;
+    ["hub", "rank", "share"].forEach((m) => $(`${m}-mask`).classList.toggle("hidden", id !== m));
+    $("pause-mask").classList.add("hidden");
+    if (id === "hub") renderHub();
+    if (id === "rank") renderRank();
+  }
+  function closeModal() {
+    setModal(null);
+  }
+  function openPanel(id, busyMsg) {
+    if (state.fishing && !state.ended) {
+      toast(busyMsg);
+      return;
+    }
+    if (state.helpOpen || state.ended) return;
+    if (id === "hub") rollDay();
+    setModal(id);
+  }
+  function questVal(id) {
+    return id === "master" ? state.sessionMaster : (meta.q[id] || 0);
+  }
+  function canCheckin() {
+    return meta.checkDay !== todayKey();
+  }
+  function chestReady(id) {
+    return Date.now() >= (meta[id] || 0);
+  }
+  function waitText(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = (s / 3600) | 0;
+    const m = ((s % 3600) / 60) | 0;
+    const sec = s % 60;
+    return h ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+  }
+  function hubClaimable() {
+    return canCheckin() || chestReady("chest4") || chestReady("chest8")
+      || QUESTS.some((q) => questVal(q.id) >= q.need && !meta.claimed[q.id])
+      || BP.some((t, i) => meta.bpXp >= t.xp && !meta.bpGot[i]);
+  }
+  function afterClaim(msg) {
+    if (msg) toast(msg);
+    saveMeta();
+    if (modalOn("hub")) renderHub();
+    renderHud();
+  }
+  function addBp(n) {
+    meta.bpXp += n;
+  }
+  function feedJackpot(stake) {
+    const n = Math.max(0, stake);
+    JACKS.forEach((j) => { meta.jp[j.id] += n * j.rate; });
+  }
+  function tickJackpots(dt) {
+    JACKS.forEach((j) => {
+      meta.jp[j.id] += j.idle * dt;
+      jpShow[j.id] += (meta.jp[j.id] - jpShow[j.id]) * Math.min(1, dt * 6);
+      const el = $("jp-" + j.id);
+      if (!el) return;
+      const txt = fmt(jpShow[j.id]);
+      if (el._v !== txt) {
+        el._v = txt;
+        el.textContent = txt;
+      }
+    });
+  }
+  function hitJackpot(j) {
+    const prize = Math.floor(meta.jp[j.id]);
+    meta.jp[j.id] = j.seed * (0.28 + Math.random() * 0.2);
+    jpShow[j.id] = meta.jp[j.id];
+    state.gold += prize;
+    state.sessionGold += prize;
+    saveMeta();
+    toast(`${j.name} +${fmt(prize)}`);
+    pushLive(maskYou(), rodOf().name, j.name, prize);
+    flashWin(Math.max(betOf().amt * j.fx, prize * 0.01));
+    maybeShare(prize, j.name);
+    const box = $("jackpots");
+    if (box) {
+      box.classList.remove("hit");
+      void box.offsetWidth;
+      box.classList.add("hit");
+    }
+    state.dirtyHud = true;
+  }
+  function rollJackpot() {
+    const luck = 0.7 + Math.min(1, betOf().amt / 800) * 0.45;
+    for (let i = JACKS.length - 1; i >= 0; i--) {
+      const j = JACKS[i];
+      if (Math.random() < j.odds * luck) {
+        hitJackpot(j);
+        return;
+      }
+    }
+  }
+  function bumpQuest(id, n) {
+    rollDay();
+    if (id === "master") state.sessionMaster += n;
+    else meta.q[id] = (meta.q[id] || 0) + n;
+    saveMeta();
+    if (modalOn("hub")) renderHub();
+    syncHubBtn();
+  }
+  function grant(gold, gems, bait) {
+    if (gold) {
+      state.gold += gold;
+      state.sessionGold += gold;
+    }
+    if (gems) state.gems += gems;
+    if (bait) meta.freeBait += bait;
+    state.dirtyHud = true;
+  }
+  function claimCheckin() {
+    if (!canCheckin()) return toast("今天已经签过了");
+    const yest = yesterdayKey();
+    meta.streak = meta.checkDay === yest ? Math.min(7, meta.streak + 1) : 1;
+    meta.checkDay = todayKey();
+    const rew = CHECK_REW[meta.streak - 1] || CHECK_REW[0];
+    grant(rew.gold, rew.gems, rew.bait);
+    addBp(8);
+    afterClaim(`签到第 ${meta.streak} 天`);
+  }
+  function claimChest(id) {
+    const spec = CHEST[id];
+    if (!spec || !chestReady(id)) return toast("还在冷却");
+    meta[id] = Date.now() + spec.ms;
+    grant(spec.gold, spec.gems, spec.bait);
+    addBp(6);
+    afterClaim(spec.msg);
+  }
+  function claimQuest(id) {
+    const q = QUESTS.find((x) => x.id === id);
+    if (!q || meta.claimed[id] || questVal(id) < q.need) return;
+    meta.claimed[id] = true;
+    grant(q.gold, 0, 0);
+    addBp(q.xp);
+    afterClaim(`任务完成 · 通行证 +${q.xp}`);
+  }
+  function claimBp(i) {
+    const t = BP[i];
+    if (!t || meta.bpGot[i] || meta.bpXp < t.xp) return;
+    meta.bpGot[i] = true;
+    grant(t.gold || 0, t.gem || 0, 0);
+    if (t.skin) meta.skin = t.skin;
+    afterClaim(`通行证：${t.label}`);
+  }
+  function renderHub() {
+    const row = $("check-row");
+    if (!row) return;
+    row.innerHTML = CHECK_REW.map((r, i) => {
+      const day = i + 1;
+      const on = meta.streak >= day && meta.checkDay === todayKey() ? "on" : "";
+      const now = canCheckin() && (meta.checkDay === yesterdayKey() ? meta.streak + 1 : 1) === day ? "now" : "";
+      return `<div class="check-day ${on} ${now}">${day}<br>${r.gold ? r.gold + "金" : r.gems ? r.gems + "钻" : "饵"}</div>`;
+    }).join("");
+    $("btn-checkin").disabled = !canCheckin() || state.ended;
+    Object.keys(CHEST).forEach((id) => {
+      const ready = chestReady(id);
+      $(`btn-${id}`).disabled = !ready;
+      $(`${id}-txt`).textContent = ready ? "可领" : waitText((meta[id] || 0) - Date.now());
+    });
+    $("quest-list").innerHTML = QUESTS.map((q) => {
+      const v = Math.min(q.need, questVal(q.id));
+      const done = meta.claimed[q.id];
+      const ready = !done && v >= q.need;
+      return `<div class="quest-item"><span>${q.label}<br>${v}/${q.need}</span><button data-q="${q.id}" ${done || !ready ? "disabled" : ""}>${done ? "已领" : ready ? "领取" : "进行中"}</button></div>`;
+    }).join("");
+    const next = BP.find((t) => meta.bpXp < t.xp) || BP[BP.length - 1];
+    const prevXp = [...BP].reverse().find((t) => meta.bpXp >= t.xp)?.xp || 0;
+    const span = Math.max(1, next.xp - prevXp);
+    $("bp-lv").textContent = `${Math.max(1, BP.filter((t) => meta.bpXp >= t.xp).length)} 级`;
+    $("bp-xp").textContent = `${meta.bpXp} XP`;
+    const fill = $("bp-fill");
+    if (fill) fill.style.width = `${Math.min(100, ((meta.bpXp - prevXp) / span) * 100)}%`;
+    $("bp-tiers").innerHTML = BP.map((t, i) => {
+      const got = meta.bpGot[i];
+      const ready = !got && meta.bpXp >= t.xp;
+      return `<button class="bp-tier ${got ? "got" : ready ? "ready" : ""}" data-bp="${i}" type="button">${i + 1} ${t.label}</button>`;
+    }).join("");
+    syncHubBtn();
+  }
+  function syncHubBtn() {
+    const btn = $("btn-hub");
+    if (btn) btn.classList.toggle("pulse", hubClaimable());
+  }
+
+  let tickerLines = [];
+  let tickerAcc = 0;
+  let lastShare = null;
+  const maskYou = () => "你***渊";
+  function liveLine(who, rod, fish, gold) {
+    return `${who} 刚刚在深海挑战中使用${rod}捕获${fish}，赢得 ${fmt(gold)} 筹码！`;
+  }
+  function fakeLive() {
+    const gold = 1800 + ((Math.random() * 42000) | 0);
+    return { text: liveLine(pick(TICKER_NAMES), pick(TICKER_ROD), pick(TICKER_FISH), gold), hot: gold > 12000 };
+  }
+  function renderTicker() {
+    const track = $("ticker-track");
+    if (!track) return;
+    const bits = tickerLines.map((t) => `<span class="${t.hot ? "hot" : ""}">${t.text}</span>`).join("");
+    track.innerHTML = bits + bits;
+  }
+  function pushLive(who, rod, fish, gold) {
+    tickerLines = [{ text: liveLine(who, rod, fish, gold), hot: gold >= 8000 }, ...tickerLines].slice(0, 10);
+    renderTicker();
+  }
+  function seedTicker() {
+    tickerLines = Array.from({ length: 8 }, fakeLive);
+    renderTicker();
+  }
+  function tickLive(dt) {
+    tickerAcc += dt;
+    if (tickerAcc < 3.2) return;
+    tickerAcc = 0;
+    tickerLines = tickerLines.concat(fakeLive()).slice(-10);
+    renderTicker();
+  }
+  const tourneySlot = () => Math.floor(Date.now() / TOURNEY_MS);
+  const tourneyLeft = () => TOURNEY_MS - (Date.now() % TOURNEY_MS);
+  function botStake(slot, i, t) {
+    return Math.floor(6200 + i * 2800 + ((slot * 19 + i * 73) % 9000) + (t || 0) * (28 + i * 9));
+  }
+  function rankBoard() {
+    ensureTourney();
+    const slot = meta.tourneySlot;
+    const t = (Date.now() % TOURNEY_MS) / 1000;
+    const rows = TOURNEY_BOTS.map((b, i) => ({ name: b.name, stake: botStake(slot, i, t), mult: 18 + ((slot * 5 + i * 17) % 220), you: false }));
+    rows.push({ name: maskYou(), stake: meta.tourneyStake || 0, mult: Math.round(meta.tourneyMult || 0), you: true });
+    rows.sort((a, b) => b.stake - a.stake || b.mult - a.mult);
+    return rows;
+  }
+  function ensureTourney() {
+    const slot = tourneySlot();
+    if (meta.tourneySlot === slot) return;
+    if (meta.tourneySlot >= 0 && !meta.tourneyClaimed) {
+      const old = meta.tourneyStake || 0;
+      const place = TOURNEY_BOTS.filter((_, i) => botStake(meta.tourneySlot, i, 480) > old).length + 1;
+      if (old > 0 && place <= 3) {
+        grant(TOURNEY_PRIZE[place - 1], place === 1 ? 2 : 0, 0);
+        toast(`上轮捕鱼王第${place}名 +${fmt(TOURNEY_PRIZE[place - 1])}`);
+      }
+    }
+    meta.tourneySlot = slot;
+    meta.tourneyStake = 0;
+    meta.tourneyMult = 0;
+    meta.tourneyClaimed = false;
+    saveMeta();
+  }
+  function addTourneyStake(n) {
+    ensureTourney();
+    meta.tourneyStake = (meta.tourneyStake || 0) + Math.max(0, n);
+    saveMeta();
+    if (modalOn("rank")) renderRank();
+  }
+  function noteTourneyMult(x) {
+    if (x > (meta.tourneyMult || 0)) {
+      meta.tourneyMult = x;
+      saveMeta();
+    }
+  }
+  function renderRank() {
+    const list = $("rank-list");
+    if (!list) return;
+    const rows = rankBoard();
+    const you = rows.find((r) => r.you);
+    const pool = 22000 + Math.floor(rows.reduce((s, r) => s + r.stake, 0) * 0.012);
+    $("rank-left").textContent = waitText(tourneyLeft());
+    $("rank-pool").textContent = fmt(pool);
+    $("rank-you").textContent = fmt(you ? you.stake : 0);
+    $("rank-mult").textContent = `${Math.round((you && you.mult) || 0)}x`;
+    list.innerHTML = rows.map((r, i) => `<div class="rank-row ${r.you ? "you" : ""}"><span>${i + 1}</span><span>${r.name}${r.you ? "（你）" : ""}</span><b>${fmt(r.stake)}</b><span>${Math.round(r.mult)}x</span></div>`).join("");
+  }
+  function shareText(info) {
+    return `我在 Deep Abyss 用${info.rod || "鱼竿"}捕获${info.fish || "深海巨物"}，打出 ${Math.round(info.x)}x，赢了 ${fmt(info.gold)} 筹码！`;
+  }
+  function paintShare(info) {
+    const art = $("share-art");
+    if (!art) return;
+    const g = art.getContext("2d");
+    g.fillStyle = "#041018";
+    g.fillRect(0, 0, 640, 360);
+    try {
+      const sea = $("sea");
+      if (sea && sea.width) g.drawImage(sea, 0, 0, 640, 360);
+    } catch (_) {}
+    g.fillStyle = "rgba(4, 10, 18, 0.48)";
+    g.fillRect(0, 0, 640, 360);
+    g.save();
+    g.translate(320, 180);
+    g.rotate(-0.32);
+    g.fillStyle = "rgba(255, 230, 180, 0.12)";
+    g.font = "700 42px Palatino, serif";
+    g.textAlign = "center";
+    g.fillText("DEEP ABYSS", 0, 0);
+    g.restore();
+    g.fillStyle = "#ffe08a";
+    g.font = "700 22px Palatino, serif";
+    g.fillText("DEEP ABYSS  ·  深海挑战", 28, 42);
+    g.fillStyle = "#fff";
+    g.font = "700 54px Palatino, serif";
+    g.fillText(`${Math.round(info.x)}x`, 28, 118);
+    g.fillStyle = "#7dfff2";
+    g.font = "18px Palatino, serif";
+    g.fillText(`${info.fish || "深海巨物"}  ·  ${info.rod || rodOf().name}`, 28, 158);
+    g.fillStyle = "#ffd36a";
+    g.font = "700 28px Palatino, serif";
+    g.fillText(`+${fmt(info.gold)} 筹码`, 28, 210);
+    g.fillStyle = "rgba(255,255,255,0.55)";
+    g.font = "14px Palatino, serif";
+    g.fillText("高光回放  ·  非官方宣传  ·  深渊还在涨", 28, 330);
+  }
+  function wireShareLinks(info) {
+    const text = shareText(info);
+    const url = location.href.split("#")[0];
+    $("share-tg").href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+    $("share-wa").href = `https://api.whatsapp.com/send?text=${encodeURIComponent(`${text} ${url}`)}`;
+    $("share-caption").textContent = `${Math.round(info.x)}x  ·  ${fmt(info.gold)} 筹码`;
+    lastShare = { ...info, text, url };
+  }
+  function showShareCard(info) {
+    paintShare(info);
+    wireShareLinks(info);
+    setModal("share");
+  }
+  function maybeShare(gold, fishName) {
+    const x = gold / Math.max(1, betOf().amt);
+    noteTourneyMult(x);
+    if (x >= SHARE_X) showShareCard({ gold, x, fish: fishName, rod: rodOf().name });
+  }
 
   const canvas = $("sea");
   const ctx = canvas.getContext("2d", { alpha: true });
@@ -289,7 +746,14 @@
     if (stage) stage.dataset.wx = id;
   }
   const tideOf = () => TIDES[state.tide] || TIDES[1];
+  function bonusOn() {
+    return !!(state.bonus && state.bonus.left > 0);
+  }
+  function featureCost(kind) {
+    return betOf().amt * (kind === "frenzy" ? 100 : 50);
+  }
   function lineCount() {
+    if (bonusOn() && state.bonus.kind === "frenzy") return 5;
     return state.multi === 3 ? 3 : 1;
   }
   function biteDepthCap() {
@@ -308,7 +772,7 @@
     const wxF = wx.bite * (wx.fav[kind] || 1);
     const tide = tideOf().d[fish.depth] || 1;
     const luck = 1 + (state.fishing ? state.castBoost : state.slipBoost || 0);
-    if (wx.sure) return Math.min(1, 0.92 * match + 0.35);
+    if (wx.sure || bonusOn()) return Math.min(1, 0.92 * match + 0.35);
     return Math.max(0.01, Math.min(0.5, 0.1 * match * boatD * boatF * rodR * wxF * tide * luck));
   }
   function biteMul() {
@@ -330,6 +794,10 @@
   function biteHudText() {
     const wx = weatherOf();
     const luck = state.fishing ? state.castBoost : state.slipBoost;
+    if (bonusOn()) {
+      const name = state.bonus.kind === "kraken" ? "海怪袭击" : "狂暴多钩";
+      return `${name} · 高爆奖励关`;
+    }
     if (wx.sure) return `必定咬钩 · ${wxLine()}${luck ? ` · 运+${Math.round(luck * 100)}%` : ""}`;
     const fish = typicalFish();
     const p = fish ? Math.round(biteChance(fish.id) * 100) : 0;
@@ -343,13 +811,15 @@
       hookTarget: 0,
       phase: "drop",
       phaseT: 0,
-      waitFor: (2.4 + Math.random() * 0.8) * rodOf().wait,
+      waitFor: bonusOn() ? 0.42 : (2.4 + Math.random() * 0.8) * rodOf().wait,
       bite: null,
       biteCreature: null,
       fightResult: null,
       checkT: 0,
       done: false,
       outcome: null,
+      nearMiss: false,
+      nearTried: false,
     };
   }
   function hookedCreatureOf(c) {
@@ -367,7 +837,8 @@
   }
   function castCost() {
     const n = Math.max(1, lineCount());
-    return baitOf().cost * n + betOf().amt * n + gearRent();
+    const bait = meta.freeBait > 0 ? 0 : baitOf().cost * n;
+    return bait + betOf().amt * n + gearRent();
   }
   function rentLabel(n) {
     return n <= 0 ? "FREE" : `租 ${fmt(n)}`;
@@ -405,6 +876,10 @@
       return `船太浅，饵够不到${DEPTH_NAME[baitOf().depth]}层`;
     }
     const n = lineCount();
+    if (bonusOn()) {
+      const name = state.bonus.kind === "kraken" ? "海怪袭击" : "狂暴多钩";
+      return `${name}已预付 · ${n}线直进奖励关`;
+    }
     if (weatherOf().sure) {
       return `${n > 1 ? `${n}线 · ` : ""}${weatherOf().name}：必定咬钩 · 空钩亏 ${fmt(spend)}`;
     }
@@ -420,8 +895,63 @@
     const total = castCost();
     $("bet-amt").textContent = fmt(bet);
     $("cast-total").textContent = n > 1 ? `${n}线 ${fmt(total)}` : `本竿 ${fmt(total)}`;
-    $("cast-parts").textContent = `饵 ${fmt(bait)}${n > 1 ? `×${n}` : ""} · 租 ${rent <= 0 ? "0" : fmt(rent)} · 注 ${fmt(bet)}${n > 1 ? `×${n}` : ""}`;
+    $("cast-parts").textContent = `饵 ${meta.freeBait > 0 ? `赠×${meta.freeBait}` : fmt(bait)}${n > 1 && meta.freeBait <= 0 ? `×${n}` : ""} · 租 ${rent <= 0 ? "0" : fmt(rent)} · 注 ${fmt(bet)}${n > 1 ? `×${n}` : ""}`;
     $("cast-odds").textContent = oddsText();
+    const k = featureCost("kraken");
+    const f = featureCost("frenzy");
+    const kc = $("kraken-cost");
+    const fc = $("frenzy-cost");
+    if (kc) kc.textContent = fmt(k);
+    if (fc) fc.textContent = fmt(f);
+  }
+
+  function addSonar(n) {
+    if (state.critArmed) return;
+    state.sonarPow = Math.min(100, state.sonarPow + n);
+    if (state.sonarPow >= 100) {
+      state.critArmed = true;
+      toast("声呐已满：下一竿必中暴击");
+    }
+    state.dirtyHud = true;
+  }
+
+  function flashWin(gold) {
+    const bet = Math.max(1, betOf().amt);
+    const x = gold / bet;
+    let tier = 0;
+    let label = "";
+    if (x >= 1000) {
+      tier = 4;
+      label = "千倍深渊";
+    } else if (x >= 200) {
+      tier = 3;
+      label = "史诗派彩";
+    } else if (x >= 50) {
+      tier = 2;
+      label = "大胜";
+    } else if (x >= 10) {
+      tier = 1;
+      label = `${Math.round(x)}x`;
+    }
+    if (x >= 10) bumpQuest("big", 1);
+    if (!tier) return;
+    const stage = $("stage");
+    stage.classList.remove("shake", "shake-2", "shake-3", "shake-4");
+    void stage.offsetWidth;
+    stage.classList.add(tier === 1 ? "shake" : `shake-${tier}`);
+    const fx = $("win-fx");
+    if (fx) {
+      fx.className = `win-fx t${tier}`;
+      $("win-label").textContent = label;
+      clearTimeout(flashWin._t);
+      flashWin._t = setTimeout(() => fx.classList.add("hidden"), 900);
+    }
+    const cx = W * 0.5;
+    const cy = H * 0.42;
+    const n = 10 + tier * 12;
+    for (let i = 0; i < n; i++) spawnParticle(cx + (Math.random() - 0.5) * 80, cy, i % 2 ? "#ffd36a" : "#fff3c0");
+    beep(280 + tier * 140, 0.16, tier >= 3 ? "sawtooth" : "square", 0.05);
+    if (tier >= 3) setTimeout(() => beep(520, 0.18, "triangle", 0.05), 90);
   }
 
   function toast(msg) {
@@ -884,7 +1414,14 @@
   function rodLook() {
     const id = rodOf().id;
     if (id === "master") {
-      return { color: "#ffd56a", glow: "rgba(255,211,106,0.95)", w: 3.4, tx: 52, ty: -16, pole: "#e8c86a" };
+      const gold = meta.skin === "gold" || meta.skin === "cyan";
+      return { color: meta.skin === "cyan" ? "#7dfff2" : "#ffd56a", glow: meta.skin === "cyan" ? "rgba(125,255,242,0.95)" : "rgba(255,211,106,0.95)", w: 3.4, tx: 52, ty: -16, pole: gold ? "#e8c86a" : "#e8c86a" };
+    }
+    if (meta.skin === "gold") {
+      return { color: "#ffd56a", glow: "rgba(255,211,106,0.7)", w: 2.4, tx: 38, ty: -8, pole: "#e8c86a" };
+    }
+    if (meta.skin === "cyan") {
+      return { color: "#7dfff2", glow: "rgba(125,255,242,0.9)", w: 2.3, tx: 36, ty: -8, pole: "#7ecfff" };
     }
     if (id === "fine") {
       return { color: "#7ecfff", glow: "rgba(125,255,242,0.85)", w: 2.4, tx: 38, ty: -8, pole: "#9ad4ff" };
@@ -1200,7 +1737,9 @@
       };
     }
     const phase = line.phase;
-    const tug = phase === "fight" || phase === "approach" ? Math.sin(now * 0.04) * 8 : 0;
+    const tugAmp = line && line.nearMiss ? 22 : 8;
+    const tugHz = line && line.nearMiss ? 0.09 : 0.04;
+    const tug = phase === "fight" || phase === "approach" ? Math.sin(now * tugHz) * tugAmp : 0;
     const y = boat.y + 10 + line.hookY;
     return { x: x0 + tug, y };
   }
@@ -1223,11 +1762,12 @@
     g.strokeStyle = inWindow ? "rgba(182, 255, 106, 0.98)" : phase === "fight" || phase === "approach" ? "rgba(255, 220, 140, 0.95)" : rs.color;
     g.shadowColor = inWindow ? "#b6ff6a" : phase === "approach" ? "#ff8a4a" : (rs.glow ? rs.color : "#9fefff");
     g.shadowBlur = inWindow ? 14 : phase === "approach" ? 12 : rodOf().id === "basic" ? 3 : 8;
-    g.lineWidth = phase === "fight" || phase === "approach" ? 2.2 : rs.w * 0.7;
+    g.lineWidth = line.nearMiss ? 3.1 : phase === "fight" || phase === "approach" ? 2.2 : rs.w * 0.7;
     g.beginPath();
     g.moveTo(tipX, rodTip.tipY);
     if (phase === "fight" || phase === "approach") {
-      g.lineTo((tipX + x) / 2 + Math.sin(now * 0.05) * 16, (rodTip.tipY + y) / 2);
+      const wiggle = line.nearMiss ? 36 : 16;
+      g.lineTo((tipX + x) / 2 + Math.sin(now * (line.nearMiss ? 0.12 : 0.05)) * wiggle, (rodTip.tipY + y) / 2);
     } else if (phase === "swing") {
       g.quadraticCurveTo((tipX + x) / 2, rodTip.tipY - 40, x, y);
     }
@@ -1317,7 +1857,7 @@
       const dy = sy - hook.y;
       const dist = Math.hypot(dx, dy);
       const match = bait.attract.includes(c.kind);
-      const sure = weatherOf().sure;
+      const sure = weatherOf().sure || bonusOn();
       const range = (match ? (sure ? 170 : 92) : (sure ? 80 : 30)) * rod.lure;
       if (dist > range) continue;
       const score = dist / (match ? 0.45 : 1) / (c.s || 20);
@@ -1326,9 +1866,17 @@
         best = c;
       }
     }
+    const force = weatherOf().sure || bonusOn();
+    if (bonusOn() && state.bonus.kind === "kraken") {
+      const cap = biteDepthCap();
+      const deep = FISH.filter((f) => f.depth <= cap).sort((a, b) => b.rarity - a.rarity);
+      let fish = deep[0] || typicalFish();
+      if (cap >= 3 && Math.random() < 0.34) fish = fishOf("leviathan");
+      else if (best && fishOf(best.kind) && fishOf(best.kind).rarity >= 3) fish = fishOf(best.kind);
+      return { fish, creature: best };
+    }
     if (!best) return { fish: null, creature: null };
-    const sure = weatherOf().sure;
-    if (!sure) {
+    if (!force) {
       const p = biteChance(best.kind);
       if (Math.random() > p) return { fish: null, creature: null };
     }
@@ -1342,7 +1890,7 @@
     ) {
       id = "leviathan";
     }
-    if (!sure && Math.random() < (weatherOf().lootBoost ? 0.22 : 0.07)) return { fish: rollLoot(), creature: null };
+    if (!force && Math.random() < (weatherOf().lootBoost ? 0.22 : 0.07)) return { fish: rollLoot(), creature: null };
     return { fish: fishOf(id), creature: best };
   }
 
@@ -1392,15 +1940,16 @@
     else beep(180, 0.09);
   }
 
-  function slipLine(line) {
-    const word = SLIP_WORDS[Math.floor(Math.random() * SLIP_WORDS.length)];
-    state.slipBoost = Math.min(0.6, state.slipBoost + 0.2);
-    toast(`${word}  下一竿咬钩+${Math.round(state.slipBoost * 100)}%`);
+  function slipLine(line, near) {
+    const word = near ? `${line.bite ? line.bite.name : "大鱼"}脱钩了！` : SLIP_WORDS[Math.floor(Math.random() * SLIP_WORDS.length)];
+    state.slipBoost = Math.min(0.6, state.slipBoost + (near ? 0.28 : 0.2));
+    toast(near ? `差一点就中 · 下一竿咬钩+${Math.round(state.slipBoost * 100)}%` : `${word}  下一竿咬钩+${Math.round(state.slipBoost * 100)}%`);
     $("fight-hint").textContent = word;
     $("fight-hint").classList.remove("hidden", "now");
+    line.fightResult = near ? "near" : "slip";
     line.biteCreature = null;
     line.bite = null;
-    beginReel(line, "slip");
+    beginReel(line, near ? "near" : "slip");
   }
 
   function noteCatch(item) {
@@ -1510,10 +2059,30 @@
       gold = Math.round(gold * SKIP_PAY);
       points = Math.round(points * SKIP_PAY);
     }
+    if (bonusOn()) {
+      const mul = state.bonus.kind === "kraken" ? 2.35 : 1.45;
+      gold = Math.round(gold * mul);
+      points = Math.round(points * (state.bonus.kind === "kraken" ? 1.6 : 1.25));
+    }
+    if (state.critArmed && !fish.loot && !state.critSpent) {
+      gold = Math.round(gold * 2.5) + 80 + betOf().amt * 2;
+      points = Math.round(points * 2);
+      state.critSpent = true;
+      state.critArmed = false;
+      state.sonarPow = 0;
+      toast("声呐暴击 · 全屏清场");
+      for (let i = 0; i < 30; i++) spawnParticle(W * 0.5 + (Math.random() - 0.5) * 90, H * 0.38, "#7dffef");
+    }
     state.gold += gold;
     state.points += points;
     state.sessionGold += gold;
     noteCatch(fish);
+    if (!fish.loot && fish.id === "eel") bumpQuest("eel", 1);
+    if (!fish.loot) {
+      rollJackpot();
+      pushLive(maskYou(), rodOf().name, fish.name, gold);
+      maybeShare(gold, fish.name);
+    }
     return { gold, points };
   }
 
@@ -1524,7 +2093,9 @@
       state.combo = 0;
       $("streak").hidden = true;
       el.classList.add("miss");
-      if (result === "slip") {
+      if (result === "near") {
+        el.innerHTML = `<h3>差一点就中</h3><p>已经咬上了，线在最后一秒松了</p>`;
+      } else if (result === "slip") {
         el.innerHTML = `<h3>脱钩</h3><p>下一竿更好咬</p>`;
       } else {
         el.innerHTML = `<h3>空钩</h3><p>钩边没有对口的鱼</p>`;
@@ -1566,16 +2137,23 @@
   function renderHud() {
     $("time").textContent = timeText(state.timeLeft);
     $("wx-hud").textContent = wxLine();
-    $("btn-cast").textContent = state.fishing ? (state.phase === "swing" ? "抛竿…" : "跳过·七折") : "下钩";
+    $("btn-cast").textContent = state.fishing
+      ? (state.phase === "swing" ? "抛竿…" : bonusOn() ? "奖励中" : "跳过·七折")
+      : bonusOn() ? "奖励关" : "下钩";
     const blocked = state.paused || state.ended || state.helpOpen;
-    const canPress = !blocked && (state.fishing || (state.gold >= castCost() && baitReady()));
+    const canPress = !blocked && (state.fishing ? !bonusOn() : (bonusOn() || (state.gold >= castCost() && baitReady())));
     $("btn-cast").disabled = !canPress;
     $("btn-charm").disabled = blocked || state.fishing || state.luckyHook || state.gems < 1;
     $("btn-sonar").disabled = blocked || state.fishing || state.sonar > 0 || state.gems < 1;
     const sonarStrong = $("btn-sonar").querySelector("strong");
     if (sonarStrong) sonarStrong.textContent = state.sonar > 0 ? `${Math.ceil(state.sonar)}秒` : "1 宝石";
-    $("btn-bet").disabled = blocked || state.fishing;
-    $("btn-x3").disabled = blocked || state.fishing;
+    $("btn-bet").disabled = blocked || state.fishing || bonusOn();
+    $("btn-x3").disabled = blocked || state.fishing || bonusOn();
+    const kNeed = featureCost("kraken");
+    const fNeed = featureCost("frenzy");
+    const featOff = blocked || state.fishing || bonusOn();
+    if ($("btn-kraken")) $("btn-kraken").disabled = featOff || state.gold < kNeed;
+    if ($("btn-frenzy")) $("btn-frenzy").disabled = featOff || state.gold < fNeed;
     $("btn-x3").classList.toggle("on", state.multi === 3);
     $("btn-x3").querySelector("strong").textContent = state.multi === 3 ? "x3" : "x1";
     if (!state.dirtyHud) return;
@@ -1584,6 +2162,11 @@
     $("gems").textContent = fmt(state.gems);
     $("goal-hud").textContent = `${state.gotRare ? "✓" : "○"} ${Math.min(state.points, GOAL_POINTS)}`;
     $("charm-hud").textContent = state.luckyHook ? "开" : "关";
+    const fill = $("sonar-fill");
+    if (fill) fill.style.width = `${Math.round(state.sonarPow)}%`;
+    if ($("sonar-txt")) $("sonar-txt").textContent = state.critArmed ? "暴击" : `${Math.round(state.sonarPow)}%`;
+    const meter = fill && fill.closest(".sonar-meter");
+    if (meter) meter.classList.toggle("ready", state.critArmed);
     $("cur-rod").textContent = `${rodOf().name} · ${rodOf().blurb}`;
     $("cur-boat").textContent = `${boatOf().name} · ${DEPTH_NAME[boatOf().depth]}层`;
     $("wx-hud").textContent = wxLine();
@@ -1753,6 +2336,7 @@
     const hits = results.filter((r) => r.fish);
     if (hits.length === 1) {
       showCatch(hits[0].fish, hits[0].reward, hits[0].result);
+      flashWin(hits[0].reward.gold);
     } else if (hits.length > 1) {
       const gold = hits.reduce((s, r) => s + r.reward.gold, 0);
       const pts = hits.reduce((s, r) => s + r.reward.points, 0);
@@ -1763,10 +2347,26 @@
       el.classList.remove("hidden");
       clearTimeout(showCatch._t);
       showCatch._t = setTimeout(() => el.classList.add("hidden"), 1800);
+      flashWin(gold);
     } else {
+      const near = results.some((r) => r.result === "near");
       const slipped = results.some((r) => r.result === "slip");
-      showCatch(null, null, slipped ? "slip" : "empty");
+      showCatch(null, null, near ? "near" : slipped ? "slip" : "empty");
     }
+    results.forEach((r) => {
+      if (r.fish) addSonar(r.fish.loot ? (r.fish.kind === "trash" ? 4 : 10) : 6 + (r.fish.rarity || 1) * 6);
+      else if (r.result === "near") addSonar(16);
+      else if (r.result === "slip") addSonar(12);
+      else addSonar(8);
+    });
+    if (state.bonus) {
+      state.bonus.left -= 1;
+      if (state.bonus.left <= 0) {
+        toast("奖励关结束");
+        state.bonus = null;
+      }
+    }
+    state.critSpent = false;
     $("fight-hint").classList.add("hidden");
     state.lines = [];
     state.phase = "idle";
@@ -1785,6 +2385,10 @@
 
   function skipCast() {
     if (!state.fishing || state.paused || state.ended || state.helpOpen) return;
+    if (bonusOn()) {
+      toast("奖励关不跳过");
+      return;
+    }
     state.skipCut = true;
     if (state.phase === "swing") {
       state.phase = "busy";
@@ -1869,22 +2473,7 @@
     $("end-log").textContent = `最贵：${best}\n沉物：垃圾 ${state.lootCounts.trash} · 古董 ${state.lootCounts.antique} · 金饰 ${state.lootCounts.jewel}\n图鉴 ${seenN}/${CATALOG_N}`;
   }
 
-  function onCastPress() {
-    if (state.paused || state.ended || state.helpOpen) return;
-    if (state.fishing) {
-      skipCast();
-      return;
-    }
-    if (!baitReady()) {
-      toast(`换${DEPTH_NAME[baitOf().depth]}层船，或改用浅饵`);
-      return;
-    }
-    const need = castCost();
-    if (state.gold < need) {
-      toast("金币不够支付诱饵、租借和赌注");
-      return;
-    }
-    state.gold -= need;
+  function beginCast() {
     state.castBoost = state.slipBoost;
     state.slipBoost = 0;
     const n = lineCount();
@@ -1897,9 +2486,64 @@
     state.phase = "swing";
     state.phaseT = 0;
     state.skipCut = false;
+    addSonar(5);
+    feedJackpot(betOf().amt * n);
+    addTourneyStake(betOf().amt * n);
+    if (meta.freeBait > 0) {
+      meta.freeBait -= 1;
+      saveMeta();
+    }
+    bumpQuest("casts", 1);
+    if (rodOf().id === "master") bumpQuest("master", 1);
     state.dirtyHud = true;
     beep(280, 0.12, "triangle");
     renderHud();
+  }
+
+  function buyFeature(kind) {
+    if (state.paused || state.ended || state.helpOpen || state.fishing) return;
+    if (bonusOn()) {
+      toast("奖励关进行中");
+      return;
+    }
+    if (!baitReady()) {
+      toast(`换${DEPTH_NAME[baitOf().depth]}层船，或改用浅饵`);
+      return;
+    }
+    const need = featureCost(kind);
+    if (state.gold < need) {
+      toast(kind === "frenzy" ? "狂钩要 100 倍注额" : "海怪要 50 倍注额，先降注或赢几竿");
+      return;
+    }
+    state.gold -= need;
+    feedJackpot(need);
+    addTourneyStake(need);
+    state.bonus = { kind, left: 1 };
+    toast(kind === "kraken" ? "深海海怪袭击 · 直进高爆关" : "狂暴多钩拉网 · 五线齐下");
+    beginCast();
+  }
+
+  function onCastPress() {
+    if (state.paused || state.ended || state.helpOpen) return;
+    if (state.fishing) {
+      skipCast();
+      return;
+    }
+    if (!baitReady()) {
+      toast(`换${DEPTH_NAME[baitOf().depth]}层船，或改用浅饵`);
+      return;
+    }
+    if (bonusOn()) {
+      beginCast();
+      return;
+    }
+    const need = castCost();
+    if (state.gold < need) {
+      toast("金币不够支付诱饵、租借和赌注");
+      return;
+    }
+    state.gold -= need;
+    beginCast();
   }
 
   function updateLine(dt, line) {
@@ -1927,7 +2571,7 @@
         }
       }
       if (line.phaseT > line.waitFor) {
-        if (weatherOf().sure) {
+        if (weatherOf().sure || bonusOn()) {
           const found = findBite(hook);
           const fish = (found && found.fish) || typicalFish();
           if (found && found.fish) {
@@ -1965,6 +2609,23 @@
         state.dirtyHud = true;
       }
     } else if (line.phase === "approach") {
+      if (line.bite && !line.bite.loot && !line.nearTried && !bonusOn() && !weatherOf().sure) {
+        line.nearTried = true;
+        const jack = line.bite.rarity >= 3 || line.bite.id === "angler" || line.bite.id === "gulper";
+        if (jack && Math.random() < 0.22) {
+          line.nearMiss = true;
+          $("fight-hint").textContent = `${line.bite.name}在死命拉扯！`;
+          $("fight-hint").classList.remove("hidden", "now");
+          beep(180, 0.14, "sawtooth", 0.045);
+        }
+      }
+      if (line.nearMiss) {
+        line.hookY += Math.sin(line.phaseT * 42) * 1.8;
+        spawnParticle(hook.x + (Math.random() - 0.5) * 28, hook.y + (Math.random() - 0.5) * 24, "rgba(255,90,70,0.95)");
+        if (line.phaseT > 1.12) slipLine(line, true);
+        state.dirtyHud = true;
+        return;
+      }
       line.hookY += Math.sin(line.phaseT * 18) * 0.8;
       const c = line.biteCreature;
       if (c) {
@@ -1975,7 +2636,7 @@
       }
       spawnParticle(hook.x + (Math.random() - 0.5) * 20, hook.y + (Math.random() - 0.5) * 20, "rgba(255,160,80,0.9)");
       if (line.phaseT > 0.7 / rodOf().lure) {
-        if (line.bite && !line.bite.loot && Math.random() < slipChance(line.bite)) slipLine(line);
+        if (line.bite && !line.bite.loot && !bonusOn() && Math.random() < slipChance(line.bite)) slipLine(line);
         else startFight(line, line.bite);
       }
       state.dirtyHud = true;
@@ -1983,7 +2644,7 @@
       line.hookY += Math.sin(line.phaseT * 14) * 0.55;
       if (Math.random() < 0.5) spawnParticle(hook.x, hook.y, "rgba(255,210,100,0.8)");
       if (line.phaseT > 0.55 / rodOf().reel) {
-        if (line.bite && !line.bite.loot && Math.random() < slipChance(line.bite) * 0.45) slipLine(line);
+        if (line.bite && !line.bite.loot && !bonusOn() && Math.random() < slipChance(line.bite) * 0.45) slipLine(line);
         else beginReel(line, "success");
       }
       state.dirtyHud = true;
@@ -2152,6 +2813,23 @@
     ctx.restore();
     drawWeatherOverlay(ctx, now);
     drawMinimap(ctx);
+    tickJackpots(dt);
+    tickLive(dt);
+    const pulse = (now / 400) | 0;
+    if (loop._pulse !== pulse) {
+      loop._pulse = pulse;
+      if (modalOn("rank")) renderRank();
+      else ensureTourney();
+      if (modalOn("hub")) {
+        Object.keys(CHEST).forEach((id) => {
+          $(`${id}-txt`).textContent = chestReady(id) ? "可领" : waitText((meta[id] || 0) - Date.now());
+        });
+      }
+    }
+    if (now - saveMetaAt > 2000) {
+      saveMetaAt = now;
+      saveMeta();
+    }
     renderHud();
     requestAnimationFrame(loop);
   }
@@ -2178,6 +2856,8 @@
       renderHud();
     };
     $("btn-cast").onclick = onCastPress;
+    if ($("btn-kraken")) $("btn-kraken").onclick = () => buyFeature("kraken");
+    if ($("btn-frenzy")) $("btn-frenzy").onclick = () => buyFeature("frenzy");
     $("btn-charm").onclick = buyCharm;
     $("btn-sonar").onclick = buySonar;
     $("btn-help").onclick = () => {
@@ -2185,8 +2865,47 @@
       state.helpOpen = false;
       $("help-mask").classList.add("hidden");
     };
+    $("btn-hub").onclick = () => (modalOn("hub") ? closeModal() : openPanel("hub", "收线后再打开回流"));
+    $("btn-rank").onclick = () => (modalOn("rank") ? closeModal() : openPanel("rank", "收线后再看冲榜"));
+    $("btn-rank-close").onclick = closeModal;
+    $("btn-share-close").onclick = closeModal;
+    $("share-copy").onclick = async () => {
+      if (!lastShare) return;
+      try {
+        await navigator.clipboard.writeText(`${lastShare.text} ${lastShare.url || ""}`);
+        toast("已复制分享文案");
+      } catch (_) {
+        toast("复制失败，请长按文案");
+      }
+    };
+    $("share-dl").onclick = () => {
+      const art = $("share-art");
+      if (!art) return;
+      const a = document.createElement("a");
+      a.href = art.toDataURL("image/png");
+      a.download = "deep-abyss-highlight.png";
+      a.click();
+    };
+    $("share-sys").onclick = async () => {
+      if (!lastShare) return;
+      if (navigator.share) {
+        try { await navigator.share({ title: "Deep Abyss", text: lastShare.text, url: lastShare.url }); } catch (_) {}
+      } else toast("请用 Telegram / WhatsApp 按钮");
+    };
+    $("btn-hub-close").onclick = closeModal;
+    $("btn-checkin").onclick = claimCheckin;
+    $("btn-chest4").onclick = () => claimChest("chest4");
+    $("btn-chest8").onclick = () => claimChest("chest8");
+    $("quest-list").onclick = (e) => {
+      const b = e.target.closest("[data-q]");
+      if (b) claimQuest(b.dataset.q);
+    };
+    $("bp-tiers").onclick = (e) => {
+      const b = e.target.closest("[data-bp]");
+      if (b) claimBp(+b.dataset.bp);
+    };
     $("btn-pause").onclick = () => {
-      if (state.ended || state.helpOpen) return;
+      if (state.ended || state.helpOpen || state.modal) return;
       state.paused = true;
       $("pause-mask").classList.remove("hidden");
     };
@@ -2297,6 +3016,9 @@
   renderShop();
   renderHud();
   bind();
+  syncHubBtn();
+  seedTicker();
+  ensureTourney();
   if (!sawHelp) {
     state.helpOpen = true;
     $("help-mask").classList.remove("hidden");
