@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=37" />
+  <link rel="stylesheet" href="css/game.css?v=43" />
 </head>
 <body>
   <div id="stage">
@@ -45,6 +45,9 @@
         <button id="btn-rank" class="hub-btn rank-btn" type="button">冲榜</button>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
       </div>
+      <div class="ticker" id="ticker">
+        <div class="ticker-track" id="ticker-track"></div>
+      </div>
     </header>
 
     <div class="drawer left" id="drawer-shop">
@@ -54,14 +57,6 @@
         <h2>船只</h2>
         <div id="boats" class="item-row"></div>
         <div class="equipped">
-          <div>
-            <span>当前竿</span>
-            <b id="cur-rod">稳竿</b>
-          </div>
-          <div>
-            <span>当前船</span>
-            <b id="cur-boat">小艇</b>
-          </div>
           <div class="rent-cell">
             <span>本竿租借</span>
             <b id="rent-fee">0</b>
@@ -76,7 +71,10 @@
           </div>
         </div>
       </aside>
-      <button class="drawer-tab" id="tab-shop" type="button">装备</button>
+      <button class="drawer-tab" id="tab-shop" type="button" aria-label="装备">
+        <span class="tab-chev" aria-hidden="true"></span>
+        <span class="tab-label">装备</span>
+      </button>
     </div>
 
     <div class="drawer right" id="drawer-bait">
@@ -86,32 +84,30 @@
         <h2>天气</h2>
         <div id="wx-items" class="bait-list"></div>
       </aside>
-      <button class="drawer-tab" id="tab-bait" type="button">鱼饵</button>
+      <button class="drawer-tab" id="tab-bait" type="button" aria-label="鱼饵">
+        <span class="tab-chev" aria-hidden="true"></span>
+        <span class="tab-label">鱼饵</span>
+      </button>
     </div>
 
-    <div class="ticker" id="ticker">
-      <div class="ticker-track" id="ticker-track"></div>
-    </div>
     <div id="fight-hint" class="fight-hint hidden">上钩了</div>
     <div class="streak" id="streak" hidden>COMBO x1</div>
 
-    <div class="feature-row">
-      <button id="btn-kraken" type="button">
-        <small>买特色</small>
-        <strong>海怪 50x</strong>
-        <span id="kraken-cost">5,000</span>
-      </button>
-      <button id="btn-frenzy" type="button">
-        <small>买特色</small>
-        <strong>狂钩 100x</strong>
-        <span id="frenzy-cost">10,000</span>
-      </button>
-    </div>
     <div class="steer">
       <button id="btn-left" type="button" aria-label="船向左">◀</button>
       <button id="btn-right" type="button" aria-label="船向右">▶</button>
     </div>
     <div class="controls">
+      <button id="btn-kraken" class="feat-btn" type="button" title="直购海怪高爆关">
+        <small>海怪</small>
+        <strong>50x</strong>
+        <span id="kraken-cost">5,000</span>
+      </button>
+      <button id="btn-frenzy" class="feat-btn" type="button" title="直购狂钩五线关">
+        <small>狂钩</small>
+        <strong>100x</strong>
+        <span id="frenzy-cost">10,000</span>
+      </button>
       <button id="btn-charm" class="charm-btn" type="button">
         <small>护钩</small>
         <strong>1 宝石</strong>
@@ -215,10 +211,10 @@
       <p>x3 同时下三杆，饵和赌注也按三倍扣</p>
       <p>50x 海怪 / 100x 狂钩可直购奖励关；声呐槽蓄满下一竿暴击</p>
       <p>回流里有四级奖池、每日签到、定时宝箱和通行证任务</p>
-      <p>底部细条是全服派彩，冲榜按本轮下注额排名，500x 会弹出分享卡</p>
+      <p>顶栏细条是全服派彩；海怪/狂钩在右下操作栏，500x 会弹出分享卡</p>
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=40"></script>
+  <script src="js/game.js?v=42"></script>
 </body>
 </html>

@@ -2167,8 +2167,6 @@
     if ($("sonar-txt")) $("sonar-txt").textContent = state.critArmed ? "暴击" : `${Math.round(state.sonarPow)}%`;
     const meter = fill && fill.closest(".sonar-meter");
     if (meter) meter.classList.toggle("ready", state.critArmed);
-    $("cur-rod").textContent = `${rodOf().name} · ${rodOf().blurb}`;
-    $("cur-boat").textContent = `${boatOf().name} · ${DEPTH_NAME[boatOf().depth]}层`;
     $("wx-hud").textContent = wxLine();
     $("bite-hud").textContent = biteHudText();
     $("rent-fee").textContent = rentLabel(gearRent());
@@ -3002,9 +3000,7 @@
   }
 
   function layoutChrome() {
-    const mobile = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
-    $("drawer-shop").classList.toggle("open", !mobile);
-    $("drawer-bait").classList.toggle("open", !mobile);
+    /* drawers stay collapsed by default so side tabs do not block the water */
   }
 
   resize();
