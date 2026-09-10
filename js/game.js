@@ -2137,16 +2137,29 @@
   function renderHud() {
     $("time").textContent = timeText(state.timeLeft);
     $("wx-hud").textContent = wxLine();
-    $("btn-cast").textContent = state.fishing
-      ? (state.phase === "swing" ? "抛竿…" : bonusOn() ? "奖励中" : "跳过·七折")
-      : bonusOn() ? "奖励关" : "下钩";
+    const castLabel = $("btn-cast")?.querySelector(".cast-label");
+    if (castLabel) {
+      castLabel.textContent = state.fishing
+        ? (state.phase === "swing" ? "抛竿…" : bonusOn() ? "奖励中" : "跳过·七折")
+        : bonusOn() ? "奖励关" : "下钩";
+    }
     const blocked = state.paused || state.ended || state.helpOpen;
     const canPress = !blocked && (state.fishing ? !bonusOn() : (bonusOn() || (state.gold >= castCost() && baitReady())));
     $("btn-cast").disabled = !canPress;
     $("btn-charm").disabled = blocked || state.fishing || state.luckyHook || state.gems < 1;
     $("btn-sonar").disabled = blocked || state.fishing || state.sonar > 0 || state.gems < 1;
-    const sonarStrong = $("btn-sonar").querySelector("strong");
-    if (sonarStrong) sonarStrong.textContent = state.sonar > 0 ? `${Math.ceil(state.sonar)}秒` : "1 宝石";
+    const sonarGem = $("btn-sonar")?.querySelector(".gem-cost");
+    const sonarTime = $("btn-sonar")?.querySelector(".sonar-time");
+    if (state.sonar > 0) {
+      if (sonarGem) sonarGem.classList.add("hidden");
+      if (sonarTime) {
+        sonarTime.classList.remove("hidden");
+        sonarTime.textContent = `${Math.ceil(state.sonar)}秒`;
+      }
+    } else {
+      if (sonarGem) sonarGem.classList.remove("hidden");
+      if (sonarTime) sonarTime.classList.add("hidden");
+    }
     $("btn-bet").disabled = blocked || state.fishing || bonusOn();
     $("btn-x3").disabled = blocked || state.fishing || bonusOn();
     const kNeed = featureCost("kraken");

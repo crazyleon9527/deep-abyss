@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=43" />
+  <link rel="stylesheet" href="css/game.css?v=48" />
 </head>
 <body>
   <div id="stage">
@@ -110,7 +110,7 @@
       </button>
       <button id="btn-charm" class="charm-btn" type="button">
         <small>护钩</small>
-        <strong>1 宝石</strong>
+        <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
       </button>
       <div class="sonar-stack">
         <div class="sonar-meter compact">
@@ -119,7 +119,8 @@
         </div>
         <button id="btn-sonar" class="charm-btn sonar-btn" type="button">
           <small>探鱼</small>
-          <strong>1 宝石</strong>
+          <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
+          <strong class="sonar-time hidden">0秒</strong>
         </button>
       </div>
       <button id="btn-bet" class="bet-btn" type="button">
@@ -127,17 +128,16 @@
         <strong id="bet-amt">100</strong>
       </button>
       <button id="btn-x3" class="x3-btn" type="button">
-        <small>同时</small>
-        <strong>x3</strong>
+        <strong>x1</strong>
       </button>
-      <div class="cast-wrap">
-        <button id="btn-cast" class="cast-btn" type="button">下钩</button>
-        <div id="cast-fee" class="cast-cost">
-          <b id="cast-total">本竿 118</b>
+      <button id="btn-cast" class="cast-card" type="button">
+        <span class="cast-label">下钩</span>
+        <span class="cast-total" id="cast-total">本竿 118</span>
+        <span class="cast-detail">
           <small id="cast-parts">饵 18 · 租 0 · 注 100</small>
           <span id="cast-odds">空钩亏 118 · 对口约 +70</span>
-        </div>
-      </div>
+        </span>
+      </button>
     </div>
 
     <div id="win-fx" class="win-fx hidden"><b id="win-label"></b></div>
@@ -215,6 +215,6 @@
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=42"></script>
+  <script src="js/game.js?v=44"></script>
 </body>
 </html>
