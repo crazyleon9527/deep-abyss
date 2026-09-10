@@ -136,67 +136,91 @@ html, body {
 .hud-top {
   position: absolute;
   z-index: 8;
-  top: 1.6%;
-  left: 1.4%;
-  right: 1.4%;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  top: 1%;
+  left: 1%;
+  right: 1%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: "left center right";
+  align-items: center;
+  gap: 8px;
   pointer-events: none;
 }
 .hud-top * { pointer-events: auto; }
-
-.hud-left {
-  min-width: 0;
-  max-width: 280px;
-  padding: 6px 10px 6px;
-  border-radius: 8px 18px 8px 8px;
+.hud-left { grid-area: left; justify-self: start; }
+.hud-center {
+  grid-area: center;
+  justify-self: center;
+  z-index: 3;
 }
-
-.points-block {
+.hud-right {
+  grid-area: right;
+  justify-self: end;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 10px;
+  background: rgba(8, 12, 18, 0.62);
+  border: 1px solid rgba(141, 106, 60, 0.32);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+  white-space: nowrap;
+}
+.hud-left { max-width: 100%; }
+.stat-score {
+  display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px;
 }
-.points-block .label {
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  color: #c9b48a;
-}
-.points-block .value {
-  font-size: clamp(13px, 1.35vw, 17px);
+.stat-score b {
+  font-size: clamp(14px, 1.4vw, 17px);
   line-height: 1;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
 }
+.stat-score small {
+  font-size: 9px;
+  color: #b9a27a;
+  letter-spacing: 0.08em;
+}
+.stat-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+.stat-item {
+  font-size: 10px;
+  color: #b9a27a;
+  letter-spacing: 0.04em;
+}
+.stat-item b { color: #f0e6d0; margin-left: 3px; font-weight: 600; }
+.stat-item.wx { color: #c9b48a; max-width: 7em; overflow: hidden; text-overflow: ellipsis; }
+.hud-wallet {
+  gap: 6px;
+  font-size: clamp(11px, 1.1vw, 14px);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+.hud-wallet b { color: var(--gold); }
+.hud-wallet #gems { color: var(--cyan); }
 .cyan-text {
   color: #7ef7ff;
   text-shadow: 0 0 10px rgba(125, 255, 242, 0.45);
 }
 
-.chip-row {
-  margin-top: 4px;
+.sonar-stack {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
-.chip {
-  flex: 1;
-  font-size: 10px;
-  color: #d8c7a2;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid #6a4a28;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.chip b { color: #fff; margin-left: 3px; }
-.chip.cost b { color: var(--gold); }
-
-.hud-right {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
 .sonar-meter {
   min-width: 108px;
   padding: 6px 10px;
@@ -205,12 +229,26 @@ html, body {
   letter-spacing: 0.1em;
   color: #d8c7a2;
 }
+.sonar-meter.compact {
+  min-width: 0;
+  width: 64px;
+  padding: 3px 5px 2px;
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.55);
+  border: 1px solid rgba(106, 212, 200, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
 .sonar-meter .bar {
   height: 7px;
   margin: 5px 0 3px;
   border-radius: 4px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.45);
+}
+.sonar-meter.compact .bar {
+  height: 5px;
+  margin: 0 0 2px;
 }
 .sonar-meter .bar i {
   display: block;
@@ -223,36 +261,12 @@ html, body {
   background: linear-gradient(90deg, #ffd36a, #ff8a4a);
 }
 .sonar-meter b { color: #fff; font-size: 12px; }
-
-.gear-lvl {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: #d8c7a2;
-}
-.gear-lvl b { font-size: 16px; color: #fff; }
-
-.wallet {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: clamp(12px, 1.3vw, 16px);
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-}
-.wallet b { color: var(--gold); }
-#gems { color: var(--cyan); }
+.sonar-meter.compact b { font-size: 9px; color: #9ff5e8; line-height: 1; }
 
 .coin-icon, .gem-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
   display: inline-block;
 }
 .coin-icon { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3c4, #e0a020 55%, #8a5a00); }
@@ -262,25 +276,27 @@ html, body {
 }
 
 .pause-btn {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
-  border: 2px solid #8d6a3c;
+  border: 1px solid #8d6a3c;
   background: linear-gradient(#3a4a18, #14180a);
   color: var(--cast-green);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 .hub-btn {
-  height: 42px;
-  padding: 0 10px;
+  height: 34px;
+  padding: 0 9px;
   border-radius: 8px;
-  border: 2px solid #c9a05a;
+  border: 1px solid #c9a05a;
   background: linear-gradient(#3a2a10, #141008);
   color: #ffd36a;
-  letter-spacing: 0.12em;
-  font-size: 12px;
+  letter-spacing: 0.1em;
+  font-size: 11px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .hub-btn.pulse {
   box-shadow: 0 0 12px rgba(255, 211, 106, 0.55);
@@ -289,26 +305,31 @@ html, body {
 
 .ticker {
   position: absolute;
-  z-index: 8;
-  top: 20.6%;
-  left: 8%;
-  right: 8%;
-  height: 24px;
+  z-index: 7;
+  bottom: 10.8%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(46%, 360px);
+  height: 17px;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 999px;
   pointer-events: none;
+  background: rgba(6, 10, 16, 0.42);
+  border: 1px solid rgba(141, 106, 60, 0.28);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 .ticker-track {
   display: inline-flex;
-  gap: 48px;
+  gap: 28px;
   white-space: nowrap;
-  padding: 4px 0;
-  font-size: 12px;
-  color: #ffe08a;
-  animation: ticker 42s linear infinite;
+  padding: 2px 10px;
+  font-size: 10px;
+  line-height: 13px;
+  color: rgba(255, 224, 138, 0.82);
+  animation: ticker 36s linear infinite;
 }
-.ticker-track span { letter-spacing: 0.04em; }
-.ticker-track .hot { color: #fff; text-shadow: 0 0 8px #ffd36a; }
+.ticker-track span { letter-spacing: 0.02em; }
+.ticker-track .hot { color: #fff6d0; text-shadow: 0 0 6px rgba(255, 211, 106, 0.45); }
 @keyframes ticker {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
@@ -362,35 +383,45 @@ html, body {
 }
 
 .jackpots {
-  position: absolute;
-  z-index: 8;
-  top: 11.2%;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 10px;
+  align-items: center;
+  gap: 2px;
   pointer-events: none;
+  position: relative;
+  z-index: 3;
 }
 .jackpots .jp {
-  min-width: 92px;
+  min-width: 0;
   text-align: center;
-  padding: 2px 6px;
+  padding: 0 5px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
+.jackpots .jp:last-child { border-right: none; }
 .jackpots small {
   display: block;
-  font-size: 8px;
-  letter-spacing: 0.14em;
-  color: #d8c7a2;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  color: #b9a27a;
+  line-height: 1;
 }
 .jackpots b {
   display: block;
-  font-size: 13px;
+  font-size: 10px;
+  line-height: 1.2;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   color: #ffe08a;
 }
-.jackpots .grand b { color: #fff3c4; font-size: 14px; text-shadow: 0 0 10px #ffd36a; }
+.jackpots .mini b { color: #d8e8ff; }
+.jackpots .minor b { color: #b6ffd8; }
+.jackpots .major b { color: #ffd08a; }
+.jackpots .grand b { color: #fff3c4; font-size: 10px; text-shadow: 0 0 6px rgba(255, 211, 106, 0.35); }
+.jackpots.hit {
+  animation: jp-hit 0.55s ease;
+}
+@keyframes jp-hit {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(1.06); box-shadow: 0 0 14px rgba(255, 211, 106, 0.45); }
+}
 
 .hub-box {
   width: min(92%, 420px);
@@ -636,7 +667,27 @@ button, .drawer-tab, .item, .bait-item {
 }
 
 @media (max-width: 900px) {
-  .hud-left { min-width: 0; width: auto; max-width: 48%; padding: 6px 8px; }
+  .hud-top {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "left right"
+      "center center";
+    gap: 4px;
+  }
+  .hud-left, .hud-right { justify-self: stretch; }
+  .hud-right { flex-wrap: wrap; justify-content: flex-end; }
+  .hud-bar { min-height: 30px; padding: 3px 7px; gap: 5px; }
+  .stat-item.wx { display: none; }
+  .jackpots b { font-size: 9px; }
+  .jackpots small { font-size: 6px; }
+  .hub-btn, .pause-btn { height: 30px; }
+  .pause-btn { width: 30px; }
+  .ticker {
+    width: min(72%, 320px);
+    bottom: 9.6%;
+    height: 16px;
+  }
+  .ticker-track { font-size: 9px; gap: 20px; }
   .panel.shop { width: min(46vw, 200px); }
   .panel.bait { width: min(22vw, 82px); }
   .item { width: 52px; min-height: 44px; }

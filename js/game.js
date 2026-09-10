@@ -524,7 +524,7 @@
   let lastShare = null;
   const maskYou = () => "你***渊";
   function liveLine(who, rod, fish, gold) {
-    return `${who} 刚刚在深海挑战中使用${rod}捕获${fish}，赢得 ${fmt(gold)} 筹码！`;
+    return `${who} · ${fish} +${fmt(gold)}`;
   }
   function fakeLive() {
     const gold = 1800 + ((Math.random() * 42000) | 0);

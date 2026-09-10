@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=32" />
+  <link rel="stylesheet" href="css/game.css?v=37" />
 </head>
 <body>
   <div id="stage">
@@ -17,25 +17,25 @@
     <div id="steer-layer" class="steer-layer"></div>
 
     <header class="hud-top">
-      <div class="hud-left copper">
-        <div class="points-block">
-          <span class="label">积分</span>
-          <span id="points" class="value cyan-text">0</span>
-        </div>
-        <div class="chip-row">
-          <div class="chip shield">目标 <b id="goal-hud">○ 0</b></div>
-          <div class="chip clock">时间 <b id="time">02:00</b></div>
-          <div class="chip weather">海况 <b id="wx-hud">晴 · 平潮</b></div>
+      <div class="hud-left hud-bar">
+        <span class="stat-score"><b id="points" class="cyan-text">0</b><small>分</small></span>
+        <span class="stat-sep"></span>
+        <span class="stat-item">目标<b id="goal-hud">○0</b></span>
+        <span class="stat-item"><b id="time">02:00</b></span>
+        <span class="stat-item wx" id="wx-hud">晴·平潮</span>
+      </div>
+      <div class="hud-center">
+        <div class="jackpots hud-bar" id="jackpots">
+          <div class="jp mini"><small>小</small><b id="jp-mini">12,840</b></div>
+          <div class="jp minor"><small>中</small><b id="jp-minor">86,200</b></div>
+          <div class="jp major"><small>大</small><b id="jp-major">428,600</b></div>
+          <div class="jp grand"><small>巨</small><b id="jp-grand">1,864,200</b></div>
         </div>
       </div>
       <div class="hud-right">
-        <div class="sonar-meter copper">
-          <span>声呐碎片</span>
-          <div class="bar"><i id="sonar-fill"></i></div>
-          <b id="sonar-txt">0%</b>
-        </div>
-        <div class="gear-lvl copper">护钩 <b id="charm-hud">关</b></div>
-        <div class="wallet copper">
+        <div class="hud-bar hud-wallet">
+          <span class="stat-item">护钩<b id="charm-hud">关</b></span>
+          <span class="stat-sep"></span>
           <span class="coin-icon"></span>
           <b id="gold">4,500</b>
           <span class="gem-icon"></span>
@@ -89,13 +89,7 @@
       <button class="drawer-tab" id="tab-bait" type="button">鱼饵</button>
     </div>
 
-    <div class="jackpots copper" id="jackpots">
-      <div class="jp mini"><small>MINI 小</small><b id="jp-mini">12,840</b></div>
-      <div class="jp minor"><small>MINOR 中</small><b id="jp-minor">86,200</b></div>
-      <div class="jp major"><small>MAJOR 大</small><b id="jp-major">428,600</b></div>
-      <div class="jp grand"><small>GRAND 巨</small><b id="jp-grand">1,864,200</b></div>
-    </div>
-    <div class="ticker copper" id="ticker">
+    <div class="ticker" id="ticker">
       <div class="ticker-track" id="ticker-track"></div>
     </div>
     <div id="fight-hint" class="fight-hint hidden">上钩了</div>
@@ -122,10 +116,16 @@
         <small>护钩</small>
         <strong>1 宝石</strong>
       </button>
-      <button id="btn-sonar" class="charm-btn sonar-btn" type="button">
-        <small>探鱼</small>
-        <strong>1 宝石</strong>
-      </button>
+      <div class="sonar-stack">
+        <div class="sonar-meter compact">
+          <div class="bar"><i id="sonar-fill"></i></div>
+          <b id="sonar-txt">0%</b>
+        </div>
+        <button id="btn-sonar" class="charm-btn sonar-btn" type="button">
+          <small>探鱼</small>
+          <strong>1 宝石</strong>
+        </button>
+      </div>
       <button id="btn-bet" class="bet-btn" type="button">
         <small>赌注</small>
         <strong id="bet-amt">100</strong>
@@ -215,10 +215,10 @@
       <p>x3 同时下三杆，饵和赌注也按三倍扣</p>
       <p>50x 海怪 / 100x 狂钩可直购奖励关；声呐槽蓄满下一竿暴击</p>
       <p>回流里有四级奖池、每日签到、定时宝箱和通行证任务</p>
-      <p>海面跑马灯是全服派彩，冲榜按本轮下注额排名，500x 会弹出分享卡</p>
+      <p>底部细条是全服派彩，冲榜按本轮下注额排名，500x 会弹出分享卡</p>
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=39"></script>
+  <script src="js/game.js?v=40"></script>
 </body>
 </html>
