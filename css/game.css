@@ -741,40 +741,6 @@ html, body {
   line-height: 1;
   text-shadow: 0 0 14px rgba(182, 255, 106, 0.32);
 }
-.cast-total {
-  display: inline-block;
-  font-size: 13px;
-  color: var(--gold);
-  letter-spacing: 0.06em;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  line-height: 1.1;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 211, 106, 0.28);
-}
-.cast-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  margin-top: 1px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(200, 239, 122, 0.14);
-}
-.cast-detail small {
-  display: block;
-  font-size: 9px;
-  line-height: 1.2;
-  color: #e0d4bc;
-  letter-spacing: 0.02em;
-}
-.cast-detail #cast-odds {
-  display: block;
-  font-size: 8px;
-  line-height: 1.25;
-  color: #a89878;
-}
 .bet-btn em {
   font-style: normal;
   font-size: 10px;
@@ -862,15 +828,6 @@ button, .drawer-tab, .item, .bait-item {
     min-width: 108px;
     min-height: 48px;
   }
-  .steer {
-    left: 1.5%;
-    bottom: max(2.2%, 8px);
-  }
-  .steer button {
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
-  }
   .controls {
     right: 3%;
     bottom: max(2.2%, 8px);
@@ -892,6 +849,48 @@ button, .drawer-tab, .item, .bait-item {
   .drawer-tab { width: 26px; min-height: 80px; }
   .drawer.left:not(.open) { transform: translateX(calc(-100% + 24px)); }
   .drawer.right:not(.open) { transform: translateX(calc(100% - 24px)); }
+}
+
+/* 护钩／探鱼两个圆钮保持正方形（手机端由 @media (pointer: coarse) 里的合并按钮规则接管） */
+@media (pointer: fine) {
+  .charm-btn { width: 100%; height: 32px; min-height: 0; box-sizing: border-box; }
+  .sonar-stack { width: 64px; }
+  /* 桌面端也一样：下钩是圆形主按钮 + 上方数据气泡，与手机保持一致 */
+  .cast-btn-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .cast-card {
+    width: 96px;
+    height: 96px;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    border-radius: 50%;
+    border-width: 3px;
+    gap: 0;
+  }
+  .cast-label { font-size: 18px; letter-spacing: 0.08em; color: #e8ffd0; }
+  .cast-bubble {
+    position: relative;
+    width: 300px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    background: rgba(6, 11, 15, 0.9);
+    border: 1px solid rgba(200, 239, 122, 0.32);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+    text-align: center;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+  .cast-bubble::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(6, 11, 15, 0.9);
+  }
+  #cast-total { color: var(--gold); font-weight: 600; }
+  #cast-odds { display: block; color: #b9a67f; font-size: 10px; margin-top: 2px; }
 }
 .equipped div {
   background: rgba(0, 0, 0, 0.18);
@@ -980,29 +979,8 @@ button, .drawer-tab, .item, .bait-item {
   position: absolute;
   inset: 0;
   z-index: 5;
-}
-.steer {
-  position: absolute;
-  z-index: 9;
-  left: 10%;
-  bottom: 3.2%;
-  display: flex;
-  gap: 8px;
-}
-.steer button {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
-  border: 1px solid rgba(182, 255, 106, 0.28);
-  background: rgba(18, 22, 10, 0.22);
-  color: rgba(182, 255, 106, 0.42);
-  font-size: 18px;
-  cursor: pointer;
-}
-.steer button:hover,
-.steer button:active {
-  background: rgba(18, 22, 10, 0.4);
-  color: rgba(182, 255, 106, 0.75);
+  /* 移船改成长按海面：这一层要吃掉滑动手势，否则会被当成页面滚动 */
+  touch-action: none;
 }
 
 .controls {
@@ -1291,151 +1269,183 @@ button, .drawer-tab, .item, .bait-item {
   }
   .ticker-track { font-size: clamp(7px, 0.801cqi, 9px); gap: clamp(9px, 1.442cqi, 16px); padding: 0 clamp(6px, 0.962cqi, 10px); }
 
+  /* 底部按钮区：全部按钮排成"底部对齐的一横排"。
+     之前用 3×3 网格把按钮摊在一个大方块里，行间全是错落和空洞，看着就乱。
+     现在每列宽度固定、flex 底对齐，所有按钮共用同一条基线；气泡绝对定位浮在这一排上方。 */
   .controls {
+    --btn: clamp(34px, 6.09cqi, 38px);
+    display: flex;
+    /* flex-end：整排只有一条底线，三个叠放列和三个圆钮都贴同一条基线 */
+    align-items: flex-end;
+    gap: clamp(4px, 0.962cqi, 6px);
     right: 2.5%;
     bottom: max(2.2%, 8px);
-    gap: clamp(4px, 0.879cqi, 9px);
-    flex-wrap: wrap-reverse;
-    justify-content: flex-end;
-    align-content: flex-end;
     max-width: 96%;
-    row-gap: clamp(3px, 0.488cqi, 5px);
   }
-  /* 尺寸来源：底部一行 7 个控件要能塞进 624px 宽的舞台。
-     按基准宽度算：海怪/狂钩/护钩/探鱼/x3 ≈ 48px，赌注 66px，下钩卡 96–116px，
-     6 个间隙合计约 40px，一行约 400px，留出余量给更窄的舞台。 */
-  .controls .feat-btn {
-    width: clamp(28px, 7.692cqi, 48px);
-    height: clamp(28px, 7.692cqi, 48px);
+  /* 两列"叠放按钮"（海怪+狂钩 / 护钩+探鱼）：列宽跟功能键一致。
+     必须 flex-shrink:0：里面只有图标+数字，min-content 很小，不锁住会被压缩成细条。 */
+  .controls .feat-stack,
+  .controls .sonar-stack {
+    width: var(--btn);
+    flex: 0 0 auto;
   }
-  .controls .charm-btn {
-    width: clamp(28px, 7.692cqi, 48px);
-    height: clamp(28px, 7.692cqi, 48px);
+
+  /* 海怪 / 狂钩：竖排一列，底边与整排对齐 */
+  .controls .feat-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
-  .sonar-stack { width: clamp(28px, 7.692cqi, 48px); }
-  .controls .sonar-meter.compact .bar { height: clamp(4px, 0.801cqi, 8px); }
-  .controls .sonar-meter.compact { padding: clamp(1px, 0.24cqi, 3px) clamp(2px, 0.481cqi, 5px); }
-  .controls .sonar-meter.compact b { font-size: clamp(6px, 0.881cqi, 9px); }
-  .controls .bet-btn {
-    width: clamp(40px, 10.577cqi, 66px);
-    height: clamp(40px, 10.577cqi, 66px);
-    border-width: clamp(2px, 0.321cqi, 3px);
-    border-color: rgba(201, 160, 90, 0.75);
+  .controls .feat-stack .feat-btn {
+    width: 100%;
+    height: clamp(22px, 4.327cqi, 27px);
+    padding: 0;
+    gap: 0;
+    border-radius: clamp(4px, 0.641cqi, 6px);
+    line-height: 1.05;
   }
-  .controls .bet-btn strong { font-size: clamp(10px, 1.923cqi, 14px); }
-  .controls .bet-btn small { font-size: clamp(7px, 1.202cqi, 10px); }
-  .controls .x3-btn {
-    width: clamp(28px, 7.051cqi, 44px);
-    height: clamp(28px, 7.051cqi, 44px);
-  }
-  .controls .x3-btn strong { font-size: clamp(11px, 2.244cqi, 17px); }
-  .controls .x3-btn small { font-size: clamp(7px, 1.122cqi, 10px); }
-  /* 下钩卡：保留全部下竿预测信息（本竿花费 / 饵·租·注 / 空钩亏与命中预估），
-     但改成"矮而宽"的横版——原来那样纵向堆叠又高又占地。
-     两行小字各自单行不换行，宽度按最长文案（饵/租/注 那行约 124px）留够。 */
-  .controls .cast-card {
-    min-width: clamp(104px, 22.436cqi, 154px);
-    max-width: clamp(112px, 24.038cqi, 164px);
-    padding: clamp(2px, 0.401cqi, 4px) clamp(4px, 0.801cqi, 7px);
-    border-width: clamp(1px, 0.24cqi, 2px);
-    border-radius: clamp(8px, 1.282cqi, 11px);
-    gap: clamp(1px, 0.16cqi, 2px);
-  }
-  .controls .cast-label { font-size: clamp(10px, 1.763cqi, 14px); letter-spacing: 0.1em; }
-  .controls .cast-total {
-    font-size: clamp(8px, 1.282cqi, 11px);
-    padding: clamp(1px, 0.16cqi, 2px) clamp(4px, 0.801cqi, 7px);
-  }
-  .controls .cast-detail {
+  .controls .feat-stack .feat-btn small { font-size: clamp(7px, 1.122cqi, 10px); }
+  .controls .feat-stack .feat-btn strong { font-size: clamp(8px, 1.282cqi, 11px); }
+  .controls .feat-stack .feat-btn span { display: none; }
+
+  /* ---- 护钩 / 探鱼：一列上下两个矩形，中间一条亮线分隔 ----
+     注意：不要在这里再写 width —— 上面那条共享规则已经用 --btn 定宽，
+     再写 width: var(--stack) 而 --stack 已删除的话，未定义变量会让整条声明失效、宽度退回 auto。 */
+  .controls .sonar-stack {
     display: flex;
     flex-direction: column;
     gap: 0;
+  }
+  .controls .sonar-stack .sonar-meter.compact { display: none; }
+  .controls .sonar-stack .charm-btn {
     width: 100%;
-    margin-top: 0;
-    padding-top: clamp(1px, 0.24cqi, 3px);
-    border-top: 1px solid rgba(200, 239, 122, 0.14);
-  }
-  .controls .cast-detail small,
-  .controls .cast-detail #cast-odds {
-    /* 上限不能给到 9px：1024px 宽的平板舞台上 0.962cqi≈9.9px 会被夹到上限，
-       "空钩亏 118 · 深渊鲱 25% · 约 +196" 需要约 149px 而卡片内宽只有 132px，会截断。 */
-    font-size: clamp(6px, 0.962cqi, 8px);
-    line-height: 1.28;
-    letter-spacing: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: center;
-  }
-  .controls .cast-parts { color: #e0d4bc; }
-  .controls #cast-odds {
-    color: #b9a67f;
-    background: rgba(0, 0, 0, 0.28);
-    border-radius: 999px;
-    margin-top: clamp(1px, 0.16cqi, 2px);
-    padding: 0 clamp(3px, 0.481cqi, 5px);
-  }
-  .controls .feat-btn strong { font-size: clamp(7px, 1.202cqi, 11px); }
-  .controls .feat-btn small { font-size: clamp(6px, 1.122cqi, 10px); }
-  .controls .feat-btn span { font-size: clamp(6px, 0.801cqi, 8px); }
-  .controls .charm-btn small { font-size: clamp(7px, 1.122cqi, 10px); letter-spacing: 0.06em; }
-  .controls .gem-cost strong { font-size: clamp(7px, 1.282cqi, 11px); line-height: 1; }
-  .controls .charm-btn strong { line-height: 1; }
-  .controls .gem-cost .gem-icon { width: clamp(8px, 1.282cqi, 11px); height: clamp(8px, 1.282cqi, 11px); }
-
-  /* 开船键：独占左下角，抬到按钮区上方（left 要避开左侧抽屉把手） */
-  .steer {
-    left: 4%;
-    bottom: calc(max(2.2%, 8px) + clamp(28px, 7.692cqi, 48px) + 16px);
-    gap: clamp(4px, 0.801cqi, 8px);
-  }
-  .steer button {
-    width: clamp(44px, 4.688cqi, 48px);
-    height: clamp(44px, 4.688cqi, 48px);
-    min-height: 44px;
-  }
-
-  /* 舞台越窄按钮区越容易换行：换行就再抬高开船键一行，并隐藏角标文字 */
-  @container stage (max-width: 700px) {
-    .steer { bottom: calc(max(2.2%, 8px) + (clamp(28px, 7.692cqi, 48px) * 2) + 22px); }
-    .controls .feat-btn span { display: none; }
-  }
-  @container stage (max-width: 560px) {
-    .steer { bottom: calc(max(2.2%, 8px) + (clamp(28px, 7.692cqi, 48px) * 3) + 28px); }
-  }
-  @container stage (max-width: 470px) {
-    .controls .feat-btn small,
-    .controls .feat-btn span,
-    .controls .charm-btn small { display: none; }
-  }
-
-  /* ---- 护钩挪到顶栏：给下钩卡腾出宽度显示下竿预测 ---- */
-  .hud-right .top-charm {
+    height: auto;
+    min-height: clamp(20px, 4.006cqi, 25px);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0;
-    width: clamp(26px, 2.885cqi, 30px);
-    height: clamp(26px, 2.885cqi, 30px);
     padding: 0;
-    border-radius: 8px;
-    border: 1px solid rgba(106, 212, 200, 0.55);
-    background: radial-gradient(circle at 35% 30%, rgba(42, 74, 72, 0.95), rgba(10, 24, 24, 0.95));
-    color: #9ff5e8;
-    cursor: pointer;
-    line-height: 1;
+    border-radius: 0;
+    border-width: 1px;
+    border-style: solid;
+    line-height: 1.1;
   }
-  /* 顶栏按钮很小，用宝石图标当标识，不写"护钩"二字 */
-  .hud-right .top-charm small { display: none; }
-  .hud-right .top-charm .gem-cost { gap: 1px; }
-  .hud-right .top-charm .gem-cost .gem-icon { width: 9px; height: 9px; }
-  .hud-right .top-charm .gem-cost strong { font-size: 9px; color: var(--cyan); }
-  .hud-right .top-charm:disabled { opacity: 0.4; }
-  .hud-right .top-charm.on {
-    border-color: var(--gold);
-    color: var(--gold);
-    box-shadow: 0 0 8px rgba(255, 211, 106, 0.5);
+  .controls .sonar-stack #btn-charm {
+    border-color: #6ad4c8;
+    border-radius: clamp(6px, 0.962cqi, 8px) clamp(6px, 0.962cqi, 8px) 0 0;
+    /* 下沿那条白线就是与探鱼的分界 */
+    box-shadow: inset 0 -1px 0 rgba(180, 245, 235, 0.65);
+    background: linear-gradient(180deg, rgba(28, 58, 56, 0.96), rgba(10, 24, 24, 0.96));
+  }
+  .controls .sonar-stack #btn-sonar {
+    border-color: #9ad4ff;
+    border-radius: 0 0 clamp(6px, 0.962cqi, 8px) clamp(6px, 0.962cqi, 8px);
+    background: linear-gradient(180deg, rgba(28, 48, 68, 0.96), rgba(8, 18, 28, 0.96));
+  }
+  .controls .sonar-stack .charm-btn small {
+    display: block;
+    font-size: clamp(7px, 1.122cqi, 10px);
+    letter-spacing: 0.04em;
+  }
+  .controls .sonar-stack .gem-cost { gap: 2px; }
+  .controls .sonar-stack .gem-cost .gem-icon { width: clamp(7px, 1.122cqi, 10px); height: clamp(7px, 1.122cqi, 10px); }
+  .controls .sonar-stack .gem-cost strong { font-size: clamp(7px, 1.122cqi, 10px); }
+  .controls .sonar-stack #sonar-txt { display: none; }
+  .controls .sonar-stack #btn-sonar .sonar-time { font-size: clamp(6px, 0.881cqi, 8px); }
+  /* 声呐充能：让探鱼那半随进度变亮（进度条已隐藏） */
+  .controls .sonar-stack #btn-sonar { filter: brightness(calc(0.88 + 0.42 * var(--sonar, 0))); }
+
+  .controls .bet-btn {
+    width: clamp(38px, 6.41cqi, 40px);
+    height: clamp(38px, 6.41cqi, 40px);
+    border-width: clamp(2px, 0.321cqi, 3px);
+    border-color: rgba(201, 160, 90, 0.7);
+  }
+  .controls .bet-btn strong { font-size: clamp(10px, 1.763cqi, 13px); }
+  .controls .bet-btn small { font-size: clamp(7px, 1.122cqi, 9px); }
+  .controls .x3-btn {
+    width: var(--btn);
+    height: var(--btn);
+  }
+  .controls .x3-btn strong { font-size: clamp(12px, 2.083cqi, 16px); }
+  .controls .x3-btn small { font-size: clamp(7px, 1.122cqi, 9px); }
+
+  /* ---- 下钩：圆形主按钮，数据气泡绝对定位浮在整排按钮上方 ----
+     气泡比圆钮宽得多，用绝对定位就不会把这一排撑高，也不会顶到旁边的按钮。 */
+  .controls .cast-btn-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    align-self: flex-end;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .controls .cast-card {
+    width: clamp(48px, 8.974cqi, 56px);
+    height: clamp(48px, 8.974cqi, 56px);
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    border-radius: 50%;
+    border-width: clamp(2px, 0.481cqi, 3px);
+    border-color: rgba(200, 239, 122, 0.85);
+    box-shadow: 0 0 12px rgba(182, 255, 106, 0.3), inset 0 1px 0 rgba(220, 255, 180, 0.16);
+    gap: 0;
+  }
+  .controls .cast-label {
+    font-size: clamp(11px, 1.923cqi, 15px);
+    letter-spacing: 0.02em;
+    color: #e8ffd0;
+  }
+  /* 气泡：本次下竿的全部数据（本竿花费 / 饵·租·注 / 空钩亏与命中预估）
+     绝对定位浮在圆钮上方，宽度按最长那行给，环绕两行；pointer-events:none 不挡点击。 */
+  .controls .cast-bubble {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + clamp(4px, 0.801cqi, 7px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: clamp(150px, 25.641cqi, 172px);
+    padding: clamp(3px, 0.641cqi, 5px) clamp(5px, 0.962cqi, 8px);
+    border-radius: clamp(5px, 0.801cqi, 7px);
+    background: rgba(6, 11, 15, 0.92);
+    border: 1px solid rgba(200, 239, 122, 0.34);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+    white-space: normal;
+    text-align: center;
+    pointer-events: none;
+    line-height: 1.25;
+    font-size: clamp(7px, 1.282cqi, 11px);
+  }
+  /* 小尖角指向下钩圆钮，锚在气泡右侧（圆钮在整排最右） */
+  .controls .cast-bubble::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    right: clamp(14px, 2.404cqi, 22px);
+    border: clamp(3px, 0.641cqi, 5px) solid transparent;
+    border-top-color: rgba(6, 11, 15, 0.92);
+  }
+  /* 版本标记：放在信息条里，小到不抢视线，但一眼能确认浏览器加载的是哪一版样式 */
+  .hud-stats .build-tag {
+    font-size: clamp(7px, 0.801cqi, 9px);
+    color: rgba(244, 234, 212, 0.38);
+    letter-spacing: 0.04em;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+  }
+  .controls .cast-bubble-sep { display: none; }
+  .controls #cast-total { color: var(--gold); font-weight: 600; }
+  .controls #cast-odds { color: #b9a67f; font-size: clamp(6px, 1.122cqi, 10px); }
+
+  /* 舞台越窄：隐藏角标文字，并把叠放按钮压得更扁 */
+  @container stage (max-width: 700px) {
+    .controls .feat-stack .feat-btn strong { font-size: clamp(7px, 1.122cqi, 9px); }
+  }
+  @container stage (max-width: 470px) {
+    .controls .sonar-stack .charm-btn small { display: none; }
   }
 }
 @media (orientation: portrait) and (pointer: coarse) and (max-width: 767px) {

@@ -5,8 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <!-- 本地 file:// 调试时避免拿到旧样式；部署到服务器时这几个头会被忽略 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=50" />
+  <link rel="stylesheet" href="css/game.css?v=55" />
 </head>
 <body>
   <div id="stage">
@@ -32,6 +36,7 @@
           <span class="stat-item">目标<b id="goal-hud">○0</b></span>
           <span class="stat-item"><b id="time">02:00</b></span>
           <span class="stat-item wx" id="wx-hud">晴·平潮</span>
+          <span class="stat-item build-tag" id="build-tag">v55</span>
         </div>
         <div class="hud-center">
           <div class="jackpots" id="jackpots">
@@ -54,9 +59,6 @@
         <button id="btn-hub" class="hub-btn" type="button">回流</button>
         <button id="btn-rank" class="hub-btn rank-btn" type="button">冲榜</button>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
-        <button id="btn-charm" class="top-charm" type="button" title="护钩">
-          <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
-        </button>
       </div>
       <div class="ticker" id="ticker">
         <div class="ticker-track" id="ticker-track"></div>
@@ -98,27 +100,31 @@
     <div id="fight-hint" class="fight-hint hidden">上钩了</div>
     <div class="streak" id="streak" hidden>COMBO x1</div>
 
-    <div class="steer">
-      <button id="btn-left" type="button" aria-label="船向左">◀</button>
-      <button id="btn-right" type="button" aria-label="船向右">▶</button>
-    </div>
     <div class="controls">
-      <button id="btn-kraken" class="feat-btn" type="button" title="直购海怪高爆关">
-        <small>海怪</small>
-        <strong>50x</strong>
-        <span id="kraken-cost">5,000</span>
-      </button>
-      <button id="btn-frenzy" class="feat-btn" type="button" title="直购狂钩五线关">
-        <small>狂钩</small>
-        <strong>100x</strong>
-        <span id="frenzy-cost">10,000</span>
-      </button>
+      <!-- 海怪 / 狂钩：竖排一列，和右侧按钮共用同一条底边 -->
+      <div class="feat-stack">
+        <button id="btn-kraken" class="feat-btn" type="button" title="直购海怪高爆关">
+          <small>海怪</small>
+          <strong>50x</strong>
+          <span id="kraken-cost">5,000</span>
+        </button>
+        <button id="btn-frenzy" class="feat-btn" type="button" title="直购狂钩五线关">
+          <small>狂钩</small>
+          <strong>100x</strong>
+          <span id="frenzy-cost">10,000</span>
+        </button>
+      </div>
       <div class="sonar-stack">
         <div class="sonar-meter compact">
           <div class="bar"><i id="sonar-fill"></i></div>
           <b id="sonar-txt">0%</b>
         </div>
-        <button id="btn-sonar" class="charm-btn sonar-btn" type="button">
+        <!-- 护钩 / 探鱼：矩形上下叠放，中间一条竖线分隔 -->
+        <button id="btn-charm" class="charm-btn" type="button" title="护钩">
+          <small>护钩</small>
+          <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
+        </button>
+        <button id="btn-sonar" class="charm-btn sonar-btn" type="button" title="探鱼">
           <small>探鱼</small>
           <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
           <strong class="sonar-time hidden">0秒</strong>
@@ -131,14 +137,17 @@
       <button id="btn-x3" class="x3-btn" type="button">
         <strong>x1</strong>
       </button>
-      <button id="btn-cast" class="cast-card" type="button">
-        <span class="cast-label">下钩</span>
-        <span class="cast-total" id="cast-total">本竿 118</span>
-        <span class="cast-detail">
-          <small id="cast-parts">饵 18 · 租 0 · 注 100</small>
+      <!-- 下钩：圆形主按钮，本次下竿的全部数据用小气泡挂在它上方 -->
+      <div class="cast-btn-wrap">
+        <div class="cast-bubble">
+          <span id="cast-total">本竿 118</span>
+          <span class="cast-bubble-sep">·</span>
           <span id="cast-odds">空钩亏 118 · 对口约 +70</span>
-        </span>
-      </button>
+        </div>
+        <button id="btn-cast" class="cast-card" type="button">
+          <span class="cast-label">下钩</span>
+        </button>
+      </div>
     </div>
 
     <div id="win-fx" class="win-fx hidden"><b id="win-label"></b></div>

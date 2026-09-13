@@ -900,8 +900,9 @@
     const bet = betOf().amt;
     const total = castCost();
     $("bet-amt").textContent = fmt(bet);
-    $("cast-total").textContent = n > 1 ? `${n}线 ${fmt(total)}` : `本竿 ${fmt(total)}`;
-    $("cast-parts").textContent = `饵 ${meta.freeBait > 0 ? `赠×${meta.freeBait}` : fmt(bait)}${n > 1 && meta.freeBait <= 0 ? `×${n}` : ""} · 租 ${rent <= 0 ? "0" : fmt(rent)} · 注 ${fmt(bet)}${n > 1 ? `×${n}` : ""}`;
+    // 气泡分两行：第一行=本竿花费 + 饵/租/注拆分，第二行=空钩亏与命中预估
+    const parts = `饵 ${meta.freeBait > 0 ? `赠×${meta.freeBait}` : fmt(bait)}${n > 1 && meta.freeBait <= 0 ? `×${n}` : ""} · 租 ${rent <= 0 ? "0" : fmt(rent)} · 注 ${fmt(bet)}${n > 1 ? `×${n}` : ""}`;
+    $("cast-total").textContent = (n > 1 ? `${n}线 ${fmt(total)}` : `本竿 ${fmt(total)}`) + " · " + parts;
     $("cast-odds").textContent = oddsText();
     const k = featureCost("kraken");
     const f = featureCost("frenzy");
@@ -2190,6 +2191,8 @@
     if ($("sonar-txt")) $("sonar-txt").textContent = state.critArmed ? "暴击" : `${Math.round(state.sonarPow)}%`;
     const meter = fill && fill.closest(".sonar-meter");
     if (meter) meter.classList.toggle("ready", state.critArmed);
+    // 手机上声呐进度条被收进合并按钮里，用 --sonar 让"探鱼"那一半随充能发光
+    $("stage").style.setProperty("--sonar", state.critArmed ? 1 : Math.min(1, state.sonarPow / 100));
     $("wx-hud").textContent = wxLine();
     $("bite-hud").textContent = biteHudText();
     renderCost();
@@ -2960,47 +2963,43 @@
 
     visualViewport?.addEventListener("resize", resize);
     window.addEventListener("orientationchange", () => setTimeout(resize, 180));
-    const hold = (id, key) => {
-      const el = $(id);
-      const dir = key === "left" ? -1 : 1;
-      const down = (e) => {
-        e.preventDefault();
-        keys[key] = true;
-        state.steerTarget = null;
-      };
-      const up = () => { keys[key] = false; };
-      el.addEventListener("pointerdown", down);
-      el.addEventListener("mousedown", down);
-      el.addEventListener("touchstart", down, { passive: false });
-      window.addEventListener("pointerup", up);
-      window.addEventListener("mouseup", up);
-      window.addEventListener("touchend", up);
-      el.addEventListener("click", () => {
-        if (state.paused || state.ended || state.fishing || state.helpOpen) return;
-        state.steerTarget = null;
-        state.boatX = Math.max(140, Math.min(WORLD - 140, state.boatX + dir * (50 + boatOf().speed * 180)));
-      });
+    // 移船：没有开船键了，改成按住海面左/右半边持续开船。
+    // 点在 HUD、按钮、抽屉把手上的事件会被那些元素自己拦住或冒泡到它们，
+    // 这里再用 closest 兜一层，保证按住 UI 不会误触发开船。
+    const steerHold = { dir: 0, pid: null };
+    const steerUI = (t) => !!(t && t.closest && t.closest(".hud-top, .controls, .drawer, .mask, .help-tip, .rotate-hint"));
+    const steerSet = (clientX) => {
+      const r = $("stage").getBoundingClientRect();
+      steerHold.dir = clientX - r.left < r.width / 2 ? -1 : 1;
+      keys.left = steerHold.dir < 0;
+      keys.right = steerHold.dir > 0;
+      state.steerTarget = null;      // 手控优先，取消自动航行目标
     };
-    hold("btn-left", "left");
-    hold("btn-right", "right");
-    const aimBoat = (clientX) => {
-      if (state.helpOpen || state.paused || state.ended) return;
-      if (state.fishing) {
-        toast("收线后再移船，钩从当前位置抛下");
+    const steerStop = () => {
+      steerHold.dir = 0;
+      steerHold.pid = null;
+      keys.left = false;
+      keys.right = false;
+    };
+    const layer = $("steer-layer");
+    layer.addEventListener("pointerdown", (e) => {
+      if (steerUI(e.target)) return;
+      if (state.fishing) {           // 收线中不能移船，和旧版点海面一样只提示一次
+        if (steerHold.dir === 0) toast("收线后再移船，钩从当前位置抛下");
         return;
       }
-      const r = $("stage").getBoundingClientRect();
-      const sx = clientX - r.left;
-      state.steerTarget = Math.max(140, Math.min(WORLD - 140, toWorldX(sx)));
-    };
-    $("steer-layer").addEventListener("pointerdown", (e) => {
-      if (e.target !== e.currentTarget) return;
-      aimBoat(e.clientX);
+      steerHold.pid = e.pointerId;
+      steerSet(e.clientX);
     });
-    $("steer-layer").addEventListener("mousedown", (e) => {
-      if (e.target !== e.currentTarget) return;
-      aimBoat(e.clientX);
+    layer.addEventListener("pointermove", (e) => {
+      if (steerHold.pid === null || e.pointerId !== steerHold.pid) return;
+      steerSet(e.clientX);          // 按住时左右滑动可以改方向
     });
+    window.addEventListener("pointerup", (e) => {
+      if (steerHold.pid !== null && e.pointerId === steerHold.pid) steerStop();
+    });
+    window.addEventListener("pointercancel", steerStop);
+    window.addEventListener("blur", steerStop);
     window.addEventListener("keydown", (e) => {
       if (e.code === "Space") {
         e.preventDefault();
