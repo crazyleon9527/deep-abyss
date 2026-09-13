@@ -186,6 +186,8 @@
   const TICKER_NAMES = ["玩家***8", "阿***龙", "深***9", "V***88", "海***K", "金***7", "夜***钩", "湾***3"];
   const TICKER_FISH = ["远古巨鲨", "利维坦", "巨口鱼", "灯鲨", "巨鱿", "灯笼鮟鱇"];
   const TICKER_ROD = ["黄金鱼竿", "金竿", "快竿", "稳竿"];
+  const TICKER_KEEP = 6;      // 跑马灯只保留最近几条，避免条带越滚越长
+  const TICKER_SPEED = 56;    // 每秒滚过的像素数，用来反推动画时长（条带窄时也不会太快）
   const TOURNEY_BOTS = [
     { id: "b0", name: "龙***7" },
     { id: "b1", name: "海***K" },
@@ -533,22 +535,26 @@
   function renderTicker() {
     const track = $("ticker-track");
     if (!track) return;
-    const bits = tickerLines.map((t) => `<span class="${t.hot ? "hot" : ""}">${t.text}</span>`).join("");
+    // 只留最近几条，跑马灯不必背着一长串历史
+    const bits = tickerLines.slice(0, TICKER_KEEP).map((t) => `<span class="${t.hot ? "hot" : ""}">${t.text}</span>`).join("");
     track.innerHTML = bits + bits;
+    // 动画默认 40s 走完一半；内容短的时候会慢得像卡住，按实际宽度定速
+    const half = track.scrollWidth / 2;
+    if (half > 0) track.style.animationDuration = `${Math.max(6, half / TICKER_SPEED)}s`;
   }
   function pushLive(who, rod, fish, gold) {
-    tickerLines = [{ text: liveLine(who, rod, fish, gold), hot: gold >= 8000 }, ...tickerLines].slice(0, 10);
+    tickerLines = [{ text: liveLine(who, rod, fish, gold), hot: gold >= 8000 }, ...tickerLines].slice(0, TICKER_KEEP);
     renderTicker();
   }
   function seedTicker() {
-    tickerLines = Array.from({ length: 8 }, fakeLive);
+    tickerLines = Array.from({ length: TICKER_KEEP }, fakeLive);
     renderTicker();
   }
   function tickLive(dt) {
     tickerAcc += dt;
     if (tickerAcc < 3.2) return;
     tickerAcc = 0;
-    tickerLines = tickerLines.concat(fakeLive()).slice(-10);
+    tickerLines = tickerLines.concat(fakeLive()).slice(-TICKER_KEEP);
     renderTicker();
   }
   const tourneySlot = () => Math.floor(Date.now() / TOURNEY_MS);
@@ -976,25 +982,29 @@
 
   function resize() {
     const stage = $("stage");
-    let r = stage.getBoundingClientRect();
-    if (r.width < 80 || r.height < 80) {
+    // 用布局尺寸而不是 getBoundingClientRect()：竖屏旋转兜底后，边界框返回的是旋转后的
+    // 视觉尺寸（宽高互换），画布会按转过 90° 的比例分配，画面就会歪。
+    let w = stage.offsetWidth;
+    let h = stage.offsetHeight;
+    if (w < 80 || h < 80) {
       const vw = window.innerWidth || 1024;
       const vh = window.innerHeight || 640;
-      const w = Math.min(vw, vh * 1024 / 640);
-      const h = Math.min(vh, vw * 640 / 1024);
+      w = Math.min(vw, vh * 1024 / 640);
+      h = Math.min(vh, vw * 640 / 1024);
       stage.style.width = `${w}px`;
       stage.style.height = `${h}px`;
-      r = stage.getBoundingClientRect();
+      w = stage.offsetWidth || w;
+      h = stage.offsetHeight || h;
     }
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    const w = Math.max(80, r.width);
-    const h = Math.max(80, r.height);
-    canvas.width = Math.floor(w * devicePixelRatio);
-    canvas.height = Math.floor(h * devicePixelRatio);
+    // 画布用布局盒子（像素）而不是 100%：竖屏旋转兜底时 #stage 的百分比高度可能因
+    // 包含块高度不确定而失效，100% 会跟着变形。
+    canvas.style.width = `${Math.max(80, w)}px`;
+    canvas.style.height = `${Math.max(80, h)}px`;
+    canvas.width = Math.floor(Math.max(80, w) * devicePixelRatio);
+    canvas.height = Math.floor(Math.max(80, h) * devicePixelRatio);
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-    W = w;
-    H = h;
+    W = Math.max(80, w);
+    H = Math.max(80, h);
   }
 
   function makeCreature(kindSpec, fromLeft, inView) {
@@ -2182,7 +2192,6 @@
     if (meter) meter.classList.toggle("ready", state.critArmed);
     $("wx-hud").textContent = wxLine();
     $("bite-hud").textContent = biteHudText();
-    $("rent-fee").textContent = rentLabel(gearRent());
     renderCost();
     state.dirtyHud = false;
   }
@@ -2206,6 +2215,7 @@
   function renderShop() {
     $("rods").innerHTML = RODS.map((r) => {
       const active = state.rod === r.id;
+      // 选中态由 .active 高亮表达，标签只写价格
       return `<button class="item ${active ? "active" : ""}" data-rent="rod" data-id="${r.id}">
         <div class="icon-art">${iconSvg(r.id)}</div>
         <div class="price">${rentLabel(r.rent)}</div>

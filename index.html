@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=48" />
+  <link rel="stylesheet" href="css/game.css?v=50" />
 </head>
 <body>
   <div id="stage">
@@ -16,20 +16,30 @@
     <div class="vignette"></div>
     <div id="steer-layer" class="steer-layer"></div>
 
+    <div id="rotate-hint" class="rotate-hint" aria-hidden="true">
+      <div class="rotate-card copper">
+        <div class="rotate-phone" aria-hidden="true"></div>
+        <h2>请横屏游玩</h2>
+        <p>深海更宽，横向开船和下钩都更顺手</p>
+      </div>
+    </div>
+
     <header class="hud-top">
       <div class="hud-left hud-bar">
-        <span class="stat-score"><b id="points" class="cyan-text">0</b><small>分</small></span>
-        <span class="stat-sep"></span>
-        <span class="stat-item">目标<b id="goal-hud">○0</b></span>
-        <span class="stat-item"><b id="time">02:00</b></span>
-        <span class="stat-item wx" id="wx-hud">晴·平潮</span>
-      </div>
-      <div class="hud-center">
-        <div class="jackpots hud-bar" id="jackpots">
-          <div class="jp mini"><small>小</small><b id="jp-mini">12,840</b></div>
-          <div class="jp minor"><small>中</small><b id="jp-minor">86,200</b></div>
-          <div class="jp major"><small>大</small><b id="jp-major">428,600</b></div>
-          <div class="jp grand"><small>巨</small><b id="jp-grand">1,864,200</b></div>
+        <div class="hud-stats">
+          <span class="stat-score"><b id="points" class="cyan-text">0</b><small>分</small></span>
+          <span class="stat-sep"></span>
+          <span class="stat-item">目标<b id="goal-hud">○0</b></span>
+          <span class="stat-item"><b id="time">02:00</b></span>
+          <span class="stat-item wx" id="wx-hud">晴·平潮</span>
+        </div>
+        <div class="hud-center">
+          <div class="jackpots" id="jackpots">
+            <div class="jp mini"><small>小</small><b id="jp-mini">12,840</b></div>
+            <div class="jp minor"><small>中</small><b id="jp-minor">86,200</b></div>
+            <div class="jp major"><small>大</small><b id="jp-major">428,600</b></div>
+            <div class="jp grand"><small>巨</small><b id="jp-grand">1,864,200</b></div>
+          </div>
         </div>
       </div>
       <div class="hud-right">
@@ -44,6 +54,9 @@
         <button id="btn-hub" class="hub-btn" type="button">回流</button>
         <button id="btn-rank" class="hub-btn rank-btn" type="button">冲榜</button>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
+        <button id="btn-charm" class="top-charm" type="button" title="护钩">
+          <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
+        </button>
       </div>
       <div class="ticker" id="ticker">
         <div class="ticker-track" id="ticker-track"></div>
@@ -58,16 +71,8 @@
         <div id="boats" class="item-row"></div>
         <div class="equipped">
           <div class="rent-cell">
-            <span>本竿租借</span>
-            <b id="rent-fee">0</b>
-          </div>
-          <div class="rent-cell">
             <span>咬钩</span>
             <b id="bite-hud">天气·船·竿·饵·潮</b>
-          </div>
-          <div class="rent-cell">
-            <span>移船</span>
-            <b>← → 开船，镜头跟随</b>
           </div>
         </div>
       </aside>
@@ -107,10 +112,6 @@
         <small>狂钩</small>
         <strong>100x</strong>
         <span id="frenzy-cost">10,000</span>
-      </button>
-      <button id="btn-charm" class="charm-btn" type="button">
-        <small>护钩</small>
-        <span class="gem-cost"><span class="gem-icon" aria-hidden="true"></span><strong>1</strong></span>
       </button>
       <div class="sonar-stack">
         <div class="sonar-meter compact">
@@ -215,6 +216,6 @@
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=44"></script>
+  <script src="js/game.js?v=45"></script>
 </body>
 </html>

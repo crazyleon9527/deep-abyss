@@ -150,11 +150,9 @@ html, body {
 }
 .hud-top * { pointer-events: auto; }
 .hud-left { grid-area: left; justify-self: start; max-width: 100%; }
-.hud-center {
-  grid-area: center;
-  justify-self: center;
-  z-index: 3;
-}
+/* 桌面端：stats / 奖池 两个包装层透明化，.hud-left 依旧是一条横向条 */
+.hud-stats,
+.hud-center { display: contents; }
 .hud-right {
   grid-area: right;
   justify-self: end;
@@ -316,14 +314,16 @@ html, body {
   grid-area: ticker;
   position: relative;
   justify-self: center;
-  width: min(100%, 240px);
-  height: 20px;
+  width: min(100%, 300px);
+  height: 22px;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 999px;
   pointer-events: none;
-  background: rgba(6, 10, 16, 0.35);
-  border: 1px solid rgba(141, 106, 60, 0.18);
-  opacity: 0.82;
+  background: linear-gradient(90deg, rgba(6, 10, 16, 0.18), rgba(6, 10, 16, 0.5) 16%, rgba(6, 10, 16, 0.5) 84%, rgba(6, 10, 16, 0.18));
+  border: 1px solid rgba(141, 106, 60, 0.2);
+  /* 两端淡出，滚动时不会在边缘硬切 */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
   display: flex;
   align-items: center;
 }
@@ -332,14 +332,26 @@ html, body {
   align-items: center;
   gap: 24px;
   white-space: nowrap;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 9px;
   line-height: 1.2;
-  color: rgba(255, 224, 138, 0.68);
+  color: rgba(255, 224, 138, 0.7);
   animation: ticker 40s linear infinite;
+  will-change: transform;
 }
 .ticker-track span { letter-spacing: 0.02em; }
+.ticker-track span::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: rgba(255, 211, 106, 0.45);
+  vertical-align: middle;
+}
 .ticker-track .hot { color: #fff6d0; text-shadow: 0 0 6px rgba(255, 211, 106, 0.45); }
+.ticker-track .hot::before { background: var(--gold); box-shadow: 0 0 6px rgba(255, 211, 106, 0.8); }
 @keyframes ticker {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
@@ -851,7 +863,7 @@ button, .drawer-tab, .item, .bait-item {
     min-height: 48px;
   }
   .steer {
-    left: 4%;
+    left: 1.5%;
     bottom: max(2.2%, 8px);
   }
   .steer button {
@@ -860,10 +872,15 @@ button, .drawer-tab, .item, .bait-item {
     min-height: 44px;
   }
   .controls {
-    right: 4%;
+    right: 3%;
     bottom: max(2.2%, 8px);
     gap: 8px;
   }
+  .hub-btn, .pause-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .drawer-tab { min-height: 116px; }
   .banner {
     min-width: 36%;
     padding: 6px 16px;
@@ -1151,4 +1168,361 @@ button, .drawer-tab, .item, .bait-item {
   font-size: 22px;
   letter-spacing: 0.28em;
   text-shadow: 0 0 14px rgba(182, 255, 106, 0.85);
+}
+
+/* ==========================================================================
+   移动端布局
+   - 竖屏：把 #stage 绕自身中心旋转 90° 铺满屏幕（手机竖屏兜底），并给出横屏提示
+   - 横屏/窄屏：底部按钮区按舞台宽度等比缩放，靠右排列，不再被 overflow:hidden 裁掉
+   - 开船键独占舞台左下角并抬到按钮区上方，避免两者命中区互相覆盖
+   缩放基准：#stage 宽 1024 → 容器查询单位 100cqi，所以 --s 恒等于 舞台宽/1024。
+   注意：cqi 在“容器元素自身”上不解析，所有用到 cqi 的长度必须写在后代元素上，
+   不要做成 #stage 上的自定义属性再继承。
+   ========================================================================== */
+@supports not (height: 100dvh) {
+  html, body { height: 100%; }
+  #stage {
+    width: min(100vw, calc(100vh * 1024 / 640));
+    height: min(100vh, calc(100vw * 640 / 1024));
+  }
+}
+
+/* 旋转提示：默认隐藏，仅手机竖屏显示 */
+.rotate-hint { display: none; }
+
+@media (pointer: coarse) {
+  #stage {
+    container-type: inline-size;
+    container-name: stage;
+  }
+
+  /* ---- HUD 合并：统计 + 奖池收进左上角一整块，钱包和功能键在它右边 ----
+     原来 .hud-top 用三列网格横跨整个舞台，竖屏旋转后中/右段会压在右下按钮区上。
+     现在左边是一块紧凑的纵向信息条（上行分数/目标/时间，下行四级奖池），
+     右侧只剩钱包和功能键，整体退到舞台左上角，两个方向都不会和按钮区打架。 */
+  .hud-top {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, auto) auto;
+    grid-template-areas:
+      "left ticker right";
+    align-items: start;
+    gap: clamp(3px, 0.586cqi, 6px);
+    top: 1%;
+  }
+  .hud-left {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: clamp(1px, 0.293cqi, 3px);
+    min-height: 0;
+    max-height: none;
+    padding: clamp(3px, 0.586cqi, 6px) clamp(5px, 0.977cqi, 10px);
+    border: 1px solid rgba(141, 106, 60, 0.32);
+    background: rgba(8, 12, 18, 0.62);
+    border-radius: 9px;
+  }
+  .hud-left::before { display: none; }
+  .hud-stats {
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 0.781cqi, 8px);
+    white-space: nowrap;
+  }
+  .hud-stats .stat-score b { font-size: clamp(15px, 2.051cqi, 21px); }
+  .hud-stats .stat-score small { font-size: clamp(8px, 0.879cqi, 9px); }
+  .hud-stats .stat-item { font-size: clamp(9px, 1.074cqi, 11px); }
+  .hud-stats .stat-sep { height: clamp(12px, 1.562cqi, 16px); }
+  .hud-stats .stat-item.wx { display: none; }
+  .hud-center {
+    display: block;
+    grid-area: auto;
+    justify-self: stretch;
+    width: 100%;
+  }
+  .jackpots {
+    justify-content: space-between;
+    width: 100%;
+    gap: 0;
+  }
+  .jackpots .jp {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 clamp(2px, 0.391cqi, 4px);
+  }
+  .jackpots small { font-size: clamp(6px, 0.684cqi, 7px); }
+  .jackpots b { font-size: clamp(8px, 1.074cqi, 11px); }
+  .jackpots .grand b { font-size: clamp(8px, 1.074cqi, 11px); }
+  .hud-right {
+    display: flex;
+    align-items: flex-start;
+    gap: clamp(3px, 0.586cqi, 6px);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 58%;
+  }
+  .hud-wallet {
+    font-size: clamp(9px, 1.074cqi, 11px);
+    gap: clamp(3px, 0.488cqi, 5px);
+    padding: clamp(2px, 0.391cqi, 4px) clamp(5px, 0.781cqi, 8px);
+    min-height: 0;
+  }
+  .hud-wallet .stat-item { font-size: clamp(9px, 1.074cqi, 11px); }
+  /* 护钩已变成顶栏按钮，钱包里再写"护钩 关"是重复信息，去掉以腾出宽度 */
+  .hud-wallet .stat-item:not(.wx) { display: none; }
+  .hud-wallet .stat-sep { display: none; }
+  .hud-right { min-width: fit-content; }
+  .hud-right .hub-btn,
+  .hud-right .pause-btn {
+    min-width: 0;
+    min-height: 0;
+    height: clamp(22px, 2.344cqi, 26px);
+    padding: 0 clamp(5px, 0.781cqi, 8px);
+    font-size: clamp(9px, 1.074cqi, 11px);
+  }
+  .hud-right .pause-btn { width: clamp(26px, 2.93cqi, 32px); }
+  /* 全服派彩条：与分数同一行居中，和两侧信息块平齐，不再压在水面上 */
+  .ticker {
+    grid-area: ticker;
+    align-self: start;
+    justify-self: center;
+    width: 100%;
+    max-width: clamp(120px, 21.474cqi, 260px);
+    height: clamp(16px, 2.724cqi, 24px);
+    margin-top: 0;
+  }
+  .ticker-track { font-size: clamp(7px, 0.801cqi, 9px); gap: clamp(9px, 1.442cqi, 16px); padding: 0 clamp(6px, 0.962cqi, 10px); }
+
+  .controls {
+    right: 2.5%;
+    bottom: max(2.2%, 8px);
+    gap: clamp(4px, 0.879cqi, 9px);
+    flex-wrap: wrap-reverse;
+    justify-content: flex-end;
+    align-content: flex-end;
+    max-width: 96%;
+    row-gap: clamp(3px, 0.488cqi, 5px);
+  }
+  /* 尺寸来源：底部一行 7 个控件要能塞进 624px 宽的舞台。
+     按基准宽度算：海怪/狂钩/护钩/探鱼/x3 ≈ 48px，赌注 66px，下钩卡 96–116px，
+     6 个间隙合计约 40px，一行约 400px，留出余量给更窄的舞台。 */
+  .controls .feat-btn {
+    width: clamp(28px, 7.692cqi, 48px);
+    height: clamp(28px, 7.692cqi, 48px);
+  }
+  .controls .charm-btn {
+    width: clamp(28px, 7.692cqi, 48px);
+    height: clamp(28px, 7.692cqi, 48px);
+  }
+  .sonar-stack { width: clamp(28px, 7.692cqi, 48px); }
+  .controls .sonar-meter.compact .bar { height: clamp(4px, 0.801cqi, 8px); }
+  .controls .sonar-meter.compact { padding: clamp(1px, 0.24cqi, 3px) clamp(2px, 0.481cqi, 5px); }
+  .controls .sonar-meter.compact b { font-size: clamp(6px, 0.881cqi, 9px); }
+  .controls .bet-btn {
+    width: clamp(40px, 10.577cqi, 66px);
+    height: clamp(40px, 10.577cqi, 66px);
+    border-width: clamp(2px, 0.321cqi, 3px);
+    border-color: rgba(201, 160, 90, 0.75);
+  }
+  .controls .bet-btn strong { font-size: clamp(10px, 1.923cqi, 14px); }
+  .controls .bet-btn small { font-size: clamp(7px, 1.202cqi, 10px); }
+  .controls .x3-btn {
+    width: clamp(28px, 7.051cqi, 44px);
+    height: clamp(28px, 7.051cqi, 44px);
+  }
+  .controls .x3-btn strong { font-size: clamp(11px, 2.244cqi, 17px); }
+  .controls .x3-btn small { font-size: clamp(7px, 1.122cqi, 10px); }
+  /* 下钩卡：保留全部下竿预测信息（本竿花费 / 饵·租·注 / 空钩亏与命中预估），
+     但改成"矮而宽"的横版——原来那样纵向堆叠又高又占地。
+     两行小字各自单行不换行，宽度按最长文案（饵/租/注 那行约 124px）留够。 */
+  .controls .cast-card {
+    min-width: clamp(104px, 22.436cqi, 154px);
+    max-width: clamp(112px, 24.038cqi, 164px);
+    padding: clamp(2px, 0.401cqi, 4px) clamp(4px, 0.801cqi, 7px);
+    border-width: clamp(1px, 0.24cqi, 2px);
+    border-radius: clamp(8px, 1.282cqi, 11px);
+    gap: clamp(1px, 0.16cqi, 2px);
+  }
+  .controls .cast-label { font-size: clamp(10px, 1.763cqi, 14px); letter-spacing: 0.1em; }
+  .controls .cast-total {
+    font-size: clamp(8px, 1.282cqi, 11px);
+    padding: clamp(1px, 0.16cqi, 2px) clamp(4px, 0.801cqi, 7px);
+  }
+  .controls .cast-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    margin-top: 0;
+    padding-top: clamp(1px, 0.24cqi, 3px);
+    border-top: 1px solid rgba(200, 239, 122, 0.14);
+  }
+  .controls .cast-detail small,
+  .controls .cast-detail #cast-odds {
+    /* 上限不能给到 9px：1024px 宽的平板舞台上 0.962cqi≈9.9px 会被夹到上限，
+       "空钩亏 118 · 深渊鲱 25% · 约 +196" 需要约 149px 而卡片内宽只有 132px，会截断。 */
+    font-size: clamp(6px, 0.962cqi, 8px);
+    line-height: 1.28;
+    letter-spacing: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+  }
+  .controls .cast-parts { color: #e0d4bc; }
+  .controls #cast-odds {
+    color: #b9a67f;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 999px;
+    margin-top: clamp(1px, 0.16cqi, 2px);
+    padding: 0 clamp(3px, 0.481cqi, 5px);
+  }
+  .controls .feat-btn strong { font-size: clamp(7px, 1.202cqi, 11px); }
+  .controls .feat-btn small { font-size: clamp(6px, 1.122cqi, 10px); }
+  .controls .feat-btn span { font-size: clamp(6px, 0.801cqi, 8px); }
+  .controls .charm-btn small { font-size: clamp(7px, 1.122cqi, 10px); letter-spacing: 0.06em; }
+  .controls .gem-cost strong { font-size: clamp(7px, 1.282cqi, 11px); line-height: 1; }
+  .controls .charm-btn strong { line-height: 1; }
+  .controls .gem-cost .gem-icon { width: clamp(8px, 1.282cqi, 11px); height: clamp(8px, 1.282cqi, 11px); }
+
+  /* 开船键：独占左下角，抬到按钮区上方（left 要避开左侧抽屉把手） */
+  .steer {
+    left: 4%;
+    bottom: calc(max(2.2%, 8px) + clamp(28px, 7.692cqi, 48px) + 16px);
+    gap: clamp(4px, 0.801cqi, 8px);
+  }
+  .steer button {
+    width: clamp(44px, 4.688cqi, 48px);
+    height: clamp(44px, 4.688cqi, 48px);
+    min-height: 44px;
+  }
+
+  /* 舞台越窄按钮区越容易换行：换行就再抬高开船键一行，并隐藏角标文字 */
+  @container stage (max-width: 700px) {
+    .steer { bottom: calc(max(2.2%, 8px) + (clamp(28px, 7.692cqi, 48px) * 2) + 22px); }
+    .controls .feat-btn span { display: none; }
+  }
+  @container stage (max-width: 560px) {
+    .steer { bottom: calc(max(2.2%, 8px) + (clamp(28px, 7.692cqi, 48px) * 3) + 28px); }
+  }
+  @container stage (max-width: 470px) {
+    .controls .feat-btn small,
+    .controls .feat-btn span,
+    .controls .charm-btn small { display: none; }
+  }
+
+  /* ---- 护钩挪到顶栏：给下钩卡腾出宽度显示下竿预测 ---- */
+  .hud-right .top-charm {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    width: clamp(26px, 2.885cqi, 30px);
+    height: clamp(26px, 2.885cqi, 30px);
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid rgba(106, 212, 200, 0.55);
+    background: radial-gradient(circle at 35% 30%, rgba(42, 74, 72, 0.95), rgba(10, 24, 24, 0.95));
+    color: #9ff5e8;
+    cursor: pointer;
+    line-height: 1;
+  }
+  /* 顶栏按钮很小，用宝石图标当标识，不写"护钩"二字 */
+  .hud-right .top-charm small { display: none; }
+  .hud-right .top-charm .gem-cost { gap: 1px; }
+  .hud-right .top-charm .gem-cost .gem-icon { width: 9px; height: 9px; }
+  .hud-right .top-charm .gem-cost strong { font-size: 9px; color: var(--cyan); }
+  .hud-right .top-charm:disabled { opacity: 0.4; }
+  .hud-right .top-charm.on {
+    border-color: var(--gold);
+    color: var(--gold);
+    box-shadow: 0 0 8px rgba(255, 211, 106, 0.5);
+  }
+}
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 767px) {
+  /* 竖屏兜底：旋转 #stage 自身（只针对手机；平板竖屏宽度够，保持横屏比例居中即可）。
+     1) #stage 必须拿到明确的像素宽高：横屏那套 min(100vw,100dvh*1.6) 在竖屏的包含块里
+        算不出正确值，会被压成视口宽度而变小；
+     2) 画布尺寸由布局盒子（offsetWidth/Height）决定，因此仍是 1024:640 那一套；
+     3) 父级 flex 先把舞台的布局盒子居中，再绕自身中心旋转，视觉上正好铺满竖屏。 */
+  html {
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #01040a;
+  }
+  body {
+    --len: min(100vh, calc(100vw * 1024 / 640));
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stage {
+    position: relative !important;
+    flex: 0 0 auto;
+    top: auto !important;
+    left: auto !important;
+    width: var(--len) !important;
+    height: calc(var(--len) * 640 / 1024) !important;
+    margin: 0 !important;
+    transform: rotate(90deg);
+  }
+  /* 旋转后 HUD 会贴到设备右侧（含刘海/圆角），补一段安全区内缩 */
+  .hud-top {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-bottom, 0px);
+  }
+  .steer-layer, .controls, .steer { touch-action: none; }
+  .rotate-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: radial-gradient(ellipse at 50% 35%, #0d2a3a, #01060d 78%);
+  }
+  .rotate-card {
+    width: min(84vw, 360px);
+    padding: 26px 22px 22px;
+    border-radius: 14px;
+    text-align: center;
+  }
+  .rotate-card h2 { color: var(--gold); letter-spacing: 0.18em; margin-bottom: 10px; }
+  .rotate-card p { color: #ddd1b4; font-size: 13px; line-height: 1.6; }
+  .rotate-phone {
+    width: 46px;
+    height: 76px;
+    margin: 0 auto 16px;
+    border: 2px solid var(--gold);
+    border-radius: 8px;
+    transform-origin: 50% 50%;
+    animation: rotate-hint 2.8s ease-in-out infinite;
+  }
+  @keyframes rotate-hint {
+    0%, 22% { transform: rotate(0deg); }
+    45%, 78% { transform: rotate(-90deg); }
+    100% { transform: rotate(-90deg); }
+  }
+}
+
+/* 小屏上把水面提示文字上移，避开抬高的开船键 */
+@media (pointer: coarse) and (max-height: 460px) {
+  .toast { bottom: 26%; }
+  .fight-hint { top: 7%; }
+  .streak { top: 13%; }
+}
+/* 抽屉把手加宽到可点尺寸（原来 26px，太窄；但不能太宽，否则会压住左下角开船键） */
+@media (pointer: coarse) {
+  .drawer-tab { width: 32px; min-height: 116px; }
+  .drawer.left:not(.open) { transform: translateX(calc(-100% + 30px)); }
+  .drawer.right:not(.open) { transform: translateX(calc(100% - 32px)); }
+  .pause-btn { min-width: 44px; }
+  .hub-btn { min-height: 40px; min-width: 44px; }
+}
+@media (hover: none) {
+  html, body { overscroll-behavior: none; -webkit-touch-callout: none; }
 }
