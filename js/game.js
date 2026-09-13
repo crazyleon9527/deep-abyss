@@ -3043,7 +3043,10 @@
        箭头函数会踩暂时性死区（TDZ）直接抛错。 */
     const autoPanel = $("auto-panel");
     let syncAutoPanel = () => {};
-    function openAutoPanel() { syncAutoPanel(); autoPanel.classList.remove("hidden"); }
+    function openAutoPanel() {
+      syncAutoPanel();
+      autoPanel.classList.remove("hidden");
+    }
     function closeAutoPanel() { autoPanel.classList.add("hidden"); }
     if (autoPanel) {
       const syncPanel = () => {
@@ -3105,8 +3108,7 @@
     $("btn-sonar").onclick = buySonar;
     $("btn-help").onclick = () => {
       sawHelp = true;
-      state.helpOpen = false;
-      $("help-mask").classList.add("hidden");
+      state.helpOpen = false;      $("help-mask").classList.add("hidden");
     };
     $("btn-hub").onclick = () => (modalOn("hub") ? closeModal() : openPanel("hub", "收线后再打开回流"));
     $("btn-rank").onclick = () => (modalOn("rank") ? closeModal() : openPanel("rank", "收线后再看冲榜"));
