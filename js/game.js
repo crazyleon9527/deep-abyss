@@ -3058,18 +3058,19 @@
         $("auto-fast").setAttribute("aria-pressed", a.fast ? "true" : "false");
         $("auto-num").textContent = String(a.fast ? a.rounds : a.rounds);
         const note = $("auto-note");
+        // 加速约 0.7 秒/局，正常速度要跑完整动画约 5 秒/局（实测）
+        const perRound = a.fast ? 0.7 : 5;
         if (a.remaining) {
-          note.textContent = `进行中 · 剩 ${a.left} 局 · 每局约 ${a.fast ? "0.7" : "4"} 秒`;
+          note.textContent = `进行中 · 剩 ${a.left} 局 · 每局约 ${perRound} 秒`;
           $("auto-go").textContent = `再加 ${a.rounds} 局`;
-          $("auto-go").classList.remove("hidden");
         } else {
           const eff = Math.min(a.rounds, cap);
           note.textContent = cap < a.rounds
             ? `金币只够 ${cap} 局，将按 ${eff} 局跑`
-            : `每局约 ${a.fast ? "0.7" : "4"} 秒 · 共约 ${(eff * (a.fast ? 0.7 : 4)).toFixed(0)} 秒`;
+            : `每局约 ${perRound} 秒 · 共约 ${(eff * perRound).toFixed(0)} 秒`;
           $("auto-go").textContent = `开始 ${eff} 局`;
-          $("auto-go").classList.remove("hidden");
         }
+        $("auto-go").classList.remove("hidden");
         $("auto-close").textContent = a.remaining ? "停止" : "取消";
       };
       syncAutoPanel = syncPanel;
