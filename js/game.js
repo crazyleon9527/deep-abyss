@@ -259,6 +259,8 @@
       dirtyHud: true,
       sessionMaster: 0,
       modal: null,
+      // 自动玩：remaining>0 表示正在跑；rounds=面板里选的局数；fast=加速开关
+      auto: { remaining: 0, all: 0, left: 0, wait: 0, spent: 0, gold0: 0, hit: 0, rounds: 10, fast: true },
     };
   }
 
@@ -2157,6 +2159,18 @@
     const blocked = state.paused || state.ended || state.helpOpen;
     const canPress = !blocked && (state.fishing ? !bonusOn() : (bonusOn() || (state.gold >= castCost() && baitReady())));
     $("btn-cast").disabled = !canPress;
+    // 自动玩：按钮上显示剩余局数，底部细条显示进度；跑动中禁用其它下注类按钮
+    const auto = $("btn-auto");
+    if (auto) {
+      const a = state.auto;
+      const running = a.remaining > 0;
+      auto.classList.toggle("on", running);
+      // 没在跑显示"10"（点一下会开 10 局）；跑动中显示剩余局数
+      auto.querySelector("strong").textContent = String(running ? a.left : 10);
+      auto.style.setProperty("--auto-p", running && a.all ? `${Math.round(((a.all - a.left) / a.all) * 100)}%` : "0%");
+      auto.title = running ? `自动玩进行中 · 剩 ${a.left} 局 · 点一下加局，点"下钩"停止` : "自动玩 · 点一下开始 10 局";
+      auto.disabled = blocked;
+    }
     $("btn-charm").disabled = blocked || state.fishing || state.luckyHook || state.gems < 1;
     $("btn-sonar").disabled = blocked || state.fishing || state.sonar > 0 || state.gems < 1;
     const sonarGem = $("btn-sonar")?.querySelector(".gem-cost");
@@ -2397,6 +2411,7 @@
     state.fishing = false;
     state.skipCut = false;
     state.dirtyHud = true;
+    autoSettle();
     renderHud();
   }
 
@@ -2405,6 +2420,140 @@
       if (!l.done) finishLine(l);
     });
     settleAll();
+  }
+
+  /* 自动玩专用：一次把抛竿 + 咬钩判定 + 结算全部走完。
+     手动路径靠 updateLine 推进状态机（下坠→等待咬钩→拉扯→收线），一局要 3~5 秒；
+     自动玩如果也走那条路，100 局要八九分钟。这里复用 skipCast 的同一套判定代码
+     （ensureLure / findBite / forceLuckyBite / maybeLoot / payout），只是不等动画。
+     不设 state.skipCut，免得玩家中途自己点"跳过"时吃到七折惩罚。 */
+  function autoSettleRound() {
+    if (!state.fishing) return;
+    if (state.phase === "swing") {
+      state.phase = "busy";
+      state.lines.forEach((l) => {
+        l.phase = "wait";
+        l.hookY = l.hookTarget;
+      });
+    } else if (state.phase === "idle") {
+      return;
+    } else {
+      state.phase = "busy";           // 无论卡在哪个阶段都强制进结算
+    }
+    state.lines.forEach((line) => {
+      if (line.done) return;
+      const hook = hookPosFor(line);
+      if (line.phase === "drop" || line.phase === "wait") {
+        ensureLure(hook);
+        const found = findBite(hook);
+        if (found.fish) {
+          line.bite = found.fish;
+          line.biteCreature = found.creature;
+          line.fightResult = "success";
+        } else if (state.luckyHook && forceLuckyBite(line)) {
+          line.fightResult = "success";
+        } else {
+          const salvage = maybeLoot(false);
+          if (salvage.fish) {
+            line.bite = salvage.fish;
+            line.fightResult = "success";
+          } else {
+            line.bite = null;
+            line.fightResult = "empty";
+          }
+        }
+      } else if (line.bite && line.fightResult !== "empty" && line.fightResult !== "slip") {
+        line.fightResult = "success";
+      } else {
+        line.fightResult = line.fightResult || "empty";
+      }
+      finishLine(line);
+    });
+    settleAll();
+  }
+
+  /* ---- 自动玩 ----
+     一局 = 一次完整的下钩→结算。用 skipCast()（就是那个"跳过·七折"）把等待期快进掉，
+     所以自动玩和手动点"跳过"是同一条路径，不会绕开任何概率或结算逻辑。
+     每局之间留 520ms，让玩家看得清结果。 */
+  const AUTO_STEP_MS = 300;
+
+  /* 自动玩交互（参考常见老虎机的 Auto）：
+     点「自动」弹出面板 → 选局数(10/20/50/100) + 加速开关 → 开始。
+     跑动中再点「自动」= 加一组同样的局数；想停就点「下钩」（手动接管）或打开任何面板。
+     局数会被"金币 ×0.6 ÷ 单局花费"封顶，避免一路跑到金币见底。 */
+  function autoCap() {
+    const per = Math.max(1, baitReady() ? castCost() : 1);
+    return Math.min(200, Math.max(1, Math.floor((state.gold * 0.6) / per)));
+  }
+
+  function autoStart() {
+    const a = state.auto;
+    const cap = autoCap();
+    const add = Math.min(a.rounds || 10, cap);
+    if (a.remaining > 0) {
+      a.remaining += add;
+      a.all += add;
+      a.left += add;
+      toast(`自动玩 +${add} 局 · 剩 ${a.left} 局`);
+    } else {
+      a.remaining = add;
+      a.all = add;
+      a.left = add;
+      a.hit = 0;
+      a.spent = 0;
+      a.gold0 = state.gold;
+      toast(`自动玩 ${add} 局${a.fast ? " · 加速中" : ""} · 点「下钩」可停`);
+    }
+    a.wait = 0;
+    state.dirtyHud = true;
+  }
+
+  function autoStop(reason) {
+    const a = state.auto;
+    const done = Math.max(0, (a.all || 0) - a.left);
+    const net = state.gold - a.gold0;
+    a.remaining = 0;
+    a.all = 0;
+    a.left = 0;
+    if (reason) toast(`${reason} · 已跑 ${done} 局 · 命中 ${a.hit} · 净${net >= 0 ? "+" : ""}${fmt(net)} 金`);
+    state.dirtyHud = true;
+  }
+
+  // 一局结算时记一笔账（净收益 = 结束后金币 - 本局开始前金币）
+  function autoSettle() {
+    if (!state.auto.remaining) return;
+    state.auto.spent += 1;
+    if (state.gold > state.auto.gold0) state.auto.hit += 1;
+  }
+
+  function autoTick() {
+    if (!state.auto.remaining) return;
+    // 只剩最后一局且已经打完，收尾
+    if (state.auto.left <= 0 && !state.fishing) { autoStop("自动玩完成"); return; }
+    // 时间到 / 暂停 / 打开面板 / 金币不够 → 停下并说明原因
+    if (state.ended) { autoStop("本局时间到"); return; }
+    if (state.paused || state.helpOpen) return;
+    if (state.modal) { autoStop("已打开面板"); return; }
+    // 顺序很重要：必须先处理"正在钓鱼"，否则 wait 不减（它只在非钓鱼时倒数），
+    // 会永远卡在等待分支、走不到结算。
+    if (state.fishing) {
+      // 奖励关不结算，让它自己跑完
+      if (bonusOn()) return;
+      // 加速开启：一帧结算；关闭：让状态机自然跑完这一局（看得见下坠/咬钩/收线）
+      if (state.auto.fast) autoSettleRound();
+      return;
+    }
+    if (state.auto.wait > 0) { state.auto.wait -= 1 / 60; return; }
+    if (!baitReady()) { autoStop(`换${DEPTH_NAME[baitOf().depth]}层船或改用浅饵`); return; }
+    // 留一点家底：连两局的钱都不够就停，别把金币耗干净
+    if (!bonusOn() && state.gold < castCost() * 2) { autoStop("金币快见底，已停"); return; }
+    if (state.timeLeft <= 4) return;      // 快结束了，等这局自然结束
+    state.auto.left -= 1;
+    state.auto.gold0 = state.gold;
+    state.auto.wait = (state.auto.fast ? AUTO_STEP_MS : 900) / 1000;
+    onCastPress();
+    state.dirtyHud = true;
   }
 
   function skipCast() {
@@ -2839,6 +2988,7 @@
     drawMinimap(ctx);
     tickJackpots(dt);
     tickLive(dt);
+    autoTick();
     const pulse = (now / 400) | 0;
     if (loop._pulse !== pulse) {
       loop._pulse = pulse;
@@ -2879,8 +3029,76 @@
       beep(360, 0.06);
       renderHud();
     };
-    $("btn-cast").onclick = onCastPress;
+    $("btn-cast").onclick = () => {
+      if (state.auto.remaining) { autoStop("已转为手动"); return; }   // 手动接管
+      onCastPress();
+    };
     if ($("btn-kraken")) $("btn-kraken").onclick = () => buyFeature("kraken");
+    $("btn-auto").onclick = () => {
+      if (state.paused || state.ended || state.helpOpen) return;
+      openAutoPanel();
+    };
+    /* ---- 自动玩面板 ----
+       注意：这里用函数声明（不是 const 箭头函数），因为它被上面的 btn-auto 引用，
+       箭头函数会踩暂时性死区（TDZ）直接抛错。 */
+    const autoPanel = $("auto-panel");
+    let syncAutoPanel = () => {};
+    function openAutoPanel() { syncAutoPanel(); autoPanel.classList.remove("hidden"); }
+    function closeAutoPanel() { autoPanel.classList.add("hidden"); }
+    if (autoPanel) {
+      const syncPanel = () => {
+        const a = state.auto;
+        const cap = autoCap();
+        autoPanel.querySelectorAll("[data-auto-n]").forEach((b) => {
+          const n = Number(b.dataset.autoN);
+          b.classList.toggle("active", n === a.rounds);
+          b.classList.toggle("over", n > cap);          // 金币不够这么多局
+        });
+        $("auto-fast").classList.toggle("on", a.fast);
+        $("auto-fast").setAttribute("aria-pressed", a.fast ? "true" : "false");
+        $("auto-num").textContent = String(a.fast ? a.rounds : a.rounds);
+        const note = $("auto-note");
+        if (a.remaining) {
+          note.textContent = `进行中 · 剩 ${a.left} 局 · 每局约 ${a.fast ? "0.7" : "4"} 秒`;
+          $("auto-go").textContent = `再加 ${a.rounds} 局`;
+          $("auto-go").classList.remove("hidden");
+        } else {
+          const eff = Math.min(a.rounds, cap);
+          note.textContent = cap < a.rounds
+            ? `金币只够 ${cap} 局，将按 ${eff} 局跑`
+            : `每局约 ${a.fast ? "0.7" : "4"} 秒 · 共约 ${(eff * (a.fast ? 0.7 : 4)).toFixed(0)} 秒`;
+          $("auto-go").textContent = `开始 ${eff} 局`;
+          $("auto-go").classList.remove("hidden");
+        }
+        $("auto-close").textContent = a.remaining ? "停止" : "取消";
+      };
+      syncAutoPanel = syncPanel;
+      autoPanel.querySelectorAll("[data-auto-n]").forEach((b) => {
+        b.onclick = () => {
+          state.auto.rounds = Number(b.dataset.autoN);
+          beep(320, 0.05);
+          syncPanel();
+          state.dirtyHud = true;
+        };
+      });
+      $("auto-fast").onclick = () => {
+        state.auto.fast = !state.auto.fast;
+        beep(state.auto.fast ? 420 : 300, 0.05);
+        syncPanel();
+      };
+      $("auto-go").onclick = () => {
+        if (state.paused || state.ended) return;
+        autoStart();
+        if (!state.auto.remaining) return;      // 没能开起来（金币不够）就留在面板上
+        closeAutoPanel();
+        state.dirtyHud = true;
+      };
+      $("auto-close").onclick = () => {
+        if (state.auto.remaining) autoStop("自动玩已停止");
+        closeAutoPanel();
+        state.dirtyHud = true;
+      };
+    }
     if ($("btn-frenzy")) $("btn-frenzy").onclick = () => buyFeature("frenzy");
     $("btn-charm").onclick = buyCharm;
     $("btn-sonar").onclick = buySonar;

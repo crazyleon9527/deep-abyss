@@ -27,11 +27,27 @@
 - **跑马灯必须与分数同一行居中**：用户明确说过"要往上移、与分数平齐，不能遮挡人物"。
   不要把它单独放一行横跨舞台。宽度 `max-width: clamp(120px, …, 260px)`，两端渐隐。
 - **底部控件＝底部对齐的一横排**（2026-09 定稿，别再改回网格）：
-  `.controls` 是 `display:flex; align-items:flex-end`，六个控件依次是
+  `.controls` 是 `display:flex; align-items:flex-end`，七个控件依次是
   `.feat-stack`（海怪+狂钩竖排）、`.sonar-stack`（护钩+探鱼竖排，中间一条亮线）、
-  `.bet-btn`、`.x3-btn`、`.cast-btn-wrap`（圆形 `#btn-cast` + 绝对定位的气泡）。
-  尺寸变量 `--btn = clamp(34px, 6.09cqi, 38px)`，整排约 234×56。
+  `.bet-btn`、`.x3-btn`、`.auto-btn`（自动玩）、`.cast-btn-wrap`（圆形 `#btn-cast` + 绝对定位的气泡）。
+  尺寸变量 `--btn = clamp(34px, 6.09cqi, 38px)`，整排约 278×56。
   曾经用 3×3 网格摊成 383×158 的大方块，行间全是错落空洞，用户说"很多不对"，别回退。
+
+### 自动玩（auto-play）
+- 交互（按老虎机习惯）：没在跑点一下开 10 局；**正在跑再点就是加局**（第 1 次 +10，之后每次 +20，
+  上限 200，且不超过"金币 ×0.6 ÷ 单局花费"）；**想停就点「下钩」**（手动接管），打开任何面板也会停。
+  按钮上的数字 = 剩余局数，底部细条是进度，跑动中 `.on` 高亮。
+- `js/game.js` 里：`autoStart / autoStop / autoSettleRound / autoTick / autoSettle`，
+  状态放在 `state.auto { remaining, all, n, left, wait, spent, gold0, hit }`。
+- **`autoTick` 里判断顺序不能改**：必须先 `if (state.fishing)` 再处理 `state.auto.wait`。
+  因为 `wait` 只在非钓鱼时倒数，顺序反了会永远卡在等待分支、走不到结算
+  （症状：每局 5 秒，而设计值 0.7 秒）。
+- **自动玩走 `autoSettleRound()` 一帧结算**，不走手动那条状态机（手动一局要 3~5 秒）。
+  它复用 `skipCast()` 的同一套判定（`ensureLure / findBite / forceLuckyBite / maybeLoot / payout`），
+  但不设 `state.skipCut`，免得玩家中途自己点"跳过"时吃到七折。
+- 奖励关（`bonusOn()`）不结算，让它自己跑完。
+- 资金保护：`state.gold < castCost() * 2` 就停（"金币快见底"），别把金币耗干净。
+- 实测：约 0.7 秒/局，10 局约 7 秒；结算时会弹 toast（已跑 N 局 · 命中 H · 净 ±X 金）。
 - **下钩按钮**：圆形主按钮，下竿预测放在**它上方的小气泡**里（`#cast-total` + `#cast-odds`），
   气泡 `position:absolute; bottom:100%; pointer-events:none`（绝不能挡点击）。
   用户明确要求"要显示跟之前一样的信息"（本竿花费 / 饵·租·注 / 空钩亏与命中预估）。

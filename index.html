@@ -10,7 +10,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=55" />
+  <link rel="stylesheet" href="css/game.css?v=57" />
 </head>
 <body>
   <div id="stage">
@@ -36,7 +36,7 @@
           <span class="stat-item">目标<b id="goal-hud">○0</b></span>
           <span class="stat-item"><b id="time">02:00</b></span>
           <span class="stat-item wx" id="wx-hud">晴·平潮</span>
-          <span class="stat-item build-tag" id="build-tag">v55</span>
+          <span class="stat-item build-tag" id="build-tag">v57</span>
         </div>
         <div class="hud-center">
           <div class="jackpots" id="jackpots">
@@ -137,6 +137,12 @@
       <button id="btn-x3" class="x3-btn" type="button">
         <strong>x1</strong>
       </button>
+      <!-- 自动玩：点开弹出轮次选择（10/20/50/100）+ 加速开关 -->
+      <button id="btn-auto" class="auto-btn" type="button" title="自动玩">
+        <small>自动</small>
+        <strong id="auto-num">10</strong>
+        <i id="auto-fill"></i>
+      </button>
       <!-- 下钩：圆形主按钮，本次下竿的全部数据用小气泡挂在它上方 -->
       <div class="cast-btn-wrap">
         <div class="cast-bubble">
@@ -151,6 +157,26 @@
     </div>
 
     <div id="win-fx" class="win-fx hidden"><b id="win-label"></b></div>
+
+    <!-- 自动玩面板：轮次选择 + 加速开关（参考常见老虎机的 Auto 弹层） -->
+    <div id="auto-panel" class="auto-panel copper hidden">
+      <div class="auto-row">
+        <span class="auto-label">局数</span>
+        <button class="auto-chip" data-auto-n="10" type="button">10</button>
+        <button class="auto-chip" data-auto-n="20" type="button">20</button>
+        <button class="auto-chip" data-auto-n="50" type="button">50</button>
+        <button class="auto-chip" data-auto-n="100" type="button">100</button>
+      </div>
+      <button id="auto-fast" class="auto-fast" type="button">
+        <span class="auto-switch" aria-hidden="true"></span>
+        <span>加速（跳过动画）</span>
+      </button>
+      <div class="auto-note" id="auto-note">每局约 0.7 秒</div>
+      <div class="auto-row auto-actions">
+        <button id="auto-go" class="auto-go" type="button">开始 10 局</button>
+        <button id="auto-close" class="auto-cancel" type="button">取消</button>
+      </div>
+    </div>
     <div id="toast" class="toast hidden"></div>
     <div id="catch-card" class="catch-card hidden"></div>
     <div id="pause-mask" class="mask hidden">
@@ -225,6 +251,6 @@
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=45"></script>
+  <script src="js/game.js?v=46"></script>
 </body>
 </html>
