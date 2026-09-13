@@ -411,6 +411,7 @@
     state.sessionGold += prize;
     saveMeta();
     toast(`${j.name} +${fmt(prize)}`);
+    sfx.jackpot();                                 // 奖池命中：金币 + 铜钟
     pushLive(maskYou(), rodOf().name, j.name, prize);
     flashWin(Math.max(betOf().amt * j.fx, prize * 0.01));
     maybeShare(prize, j.name);
@@ -681,22 +682,286 @@
   const particles = [];
   const keys = { left: false, right: false };
 
-  let audio;
-  function beep(freq, dur, type = "sine", gain = 0.04) {
+  /* ============================ 音频 ============================
+     全部用 WebAudio 现场合成，不依赖音频文件：项目是 file:// 直开的零依赖页面，
+     加载 mp3 既会拖慢首屏，也不方便随设备调整音色。
+     结构：一个主输出 → 静音开关；环境层走单独的 ambGain，可以独立淡入淡出。
+     重要：移动端（iOS Safari）必须在用户手势里创建/恢复 AudioContext，
+     否则一直是 suspended，整个游戏没声音——所以有 unlockAudio()。 */
+  let audio = null;
+  let masterGain = null;
+  let ambGain = null;
+  let noiseBuf = null;
+  let ambLayers = {};       // 环境层：{ key: { src, gain, filter } }
+  let ambKey = "";
+  const SND = { on: true, unlockTried: false, quietClick: false };
+
+  function ac() {
+    if (audio) return audio;
     try {
-      audio = audio || new AudioContext();
-      const o = audio.createOscillator();
-      const g = audio.createGain();
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      audio = new Ctor();
+      masterGain = audio.createGain();
+      masterGain.gain.value = SND.on ? 0.9 : 0;
+      masterGain.connect(audio.destination);
+      ambGain = audio.createGain();
+      ambGain.gain.value = 0.5;
+      ambGain.connect(masterGain);
+    } catch (_) { audio = null; }
+    return audio;
+  }
+
+  // 在第一次用户手势时调用（pointerdown / keydown / click 都行）
+  function unlockAudio() {
+    const a = ac();
+    if (!a) return;
+    SND.unlockTried = true;
+    if (a.state === "suspended") a.resume().catch(() => {});
+  }
+
+  // 一次性生成的噪声缓冲，做水花/卷线/风/雨都靠它
+  function noise() {
+    const a = ac();
+    if (!a) return null;
+    if (noiseBuf) return noiseBuf;
+    const len = Math.floor(a.sampleRate * 2);
+    const buf = a.createBuffer(1, len, a.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;          // 一点点布朗成分，听起来更像水/风
+      d[i] = white * 0.7 + last * 3;
+    }
+    noiseBuf = buf;
+    return buf;
+  }
+
+  function envGain(a, t0, atk, hold, rel, peak) {
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + atk);
+    g.gain.setValueAtTime(peak, t0 + atk + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + atk + hold + rel);
+    return g;
+  }
+
+  function tone(freq, dur, type = "sine", vol = 0.05, opt = {}) {
+    const a = ac();
+    if (!a || !SND.on) return;
+    try {
+      const t0 = a.currentTime + (opt.delay || 0);
+      const o = a.createOscillator();
       o.type = type;
-      o.frequency.value = freq;
-      g.gain.value = gain;
-      o.connect(g);
-      g.connect(audio.destination);
-      o.start();
-      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
-      o.stop(audio.currentTime + dur);
+      o.frequency.setValueAtTime(freq, t0);
+      if (opt.to) o.frequency.exponentialRampToValueAtTime(Math.max(20, opt.to), t0 + dur);
+      if (opt.detune) o.detune.setValueAtTime(opt.detune, t0);
+      const g = a.createGain();
+      const out = opt.dest || masterGain;
+      if (opt.filter) {
+        const f = a.createBiquadFilter();
+        f.type = opt.filter;
+        f.frequency.value = opt.cutoff || 1200;
+        if (opt.q) f.Q.value = opt.q;
+        o.connect(g); g.connect(f); f.connect(out);
+      } else {
+        o.connect(g); g.connect(out);
+      }
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + (opt.atk || 0.008));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.start(t0);
+      o.stop(t0 + dur + 0.02);
     } catch (_) {}
   }
+
+  function noiseHit(dur, vol, opt = {}) {
+    const a = ac();
+    const buf = noise();
+    if (!a || !buf || !SND.on) return;
+    try {
+      const t0 = a.currentTime + (opt.delay || 0);
+      const src = a.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = opt.rate || 1;
+      const f = a.createBiquadFilter();
+      f.type = opt.type || "lowpass";
+      f.frequency.setValueAtTime(opt.cutoff || 1400, t0);
+      if (opt.cutoffTo) f.frequency.exponentialRampToValueAtTime(Math.max(60, opt.cutoffTo), t0 + dur);
+      if (opt.q) f.Q.value = opt.q;
+      const g = envGain(a, t0, opt.atk || 0.006, opt.hold || 0, opt.rel || dur, vol);
+      src.connect(f); f.connect(g); g.connect(opt.dest || masterGain);
+      src.start(t0);
+      src.stop(t0 + dur + 0.05);
+    } catch (_) {}
+  }
+
+  /* ---- 环境层：海浪 + 按天气叠加 ---- */
+  function ambLayer(key, cfg) {
+    const a = ac();
+    if (!a) return null;
+    const src = a.createBufferSource();
+    src.buffer = noise();
+    src.loop = true;
+    src.playbackRate.value = cfg.rate || 1;
+    const f = a.createBiquadFilter();
+    f.type = cfg.type || "lowpass";
+    f.frequency.value = cfg.cutoff || 500;
+    if (cfg.q) f.Q.value = cfg.q;
+    const g = a.createGain();
+    g.gain.value = 0.0001;
+    src.connect(f); f.connect(g); g.connect(ambGain);
+    src.start();
+    return { src, gain: g, filter: f, vol: cfg.vol || 0.05, lfo: cfg.lfo || 0 };
+  }
+
+  function setAmbient(key, layers) {
+    if (!ac()) return;
+    if (key === ambKey) return;
+    ambKey = key;
+    const now = audio.currentTime;
+    Object.keys(ambLayers).forEach((k) => {
+      const L = ambLayers[k];
+      try {
+        L.gain.gain.cancelScheduledValues(now);
+        L.gain.gain.setValueAtTime(L.gain.gain.value, now);
+        L.gain.gain.linearRampToValueAtTime(0.0001, now + 0.8);
+        setTimeout(() => { try { L.src.stop(); } catch (_) {} }, 900);
+      } catch (_) {}
+    });
+    ambLayers = {};
+    if (!SND.on) return;
+    layers.forEach(([k, cfg]) => {
+      const L = ambLayer(k, cfg);
+      if (!L) return;
+      ambLayers[k] = L;
+      L.gain.gain.setValueAtTime(0.0001, now);
+      L.gain.gain.linearRampToValueAtTime(L.vol, now + 1.2);
+    });
+  }
+
+  function ambForWeather(w) {
+    // 基底：低频海浪涌动
+    const base = ["surf", { type: "lowpass", cutoff: 420, rate: 0.55, vol: 0.05, q: 0.7 }];
+    const wet = ["hiss", { type: "highpass", cutoff: 2600, rate: 1, vol: 0.018 }];
+    const layers = [base];
+    if (w === "overcast") layers.push(["wind", { type: "bandpass", cutoff: 620, q: 0.6, rate: 0.8, vol: 0.03 }]);
+    if (w === "wind") layers.push(["wind", { type: "bandpass", cutoff: 780, q: 0.5, rate: 1.05, vol: 0.075 }]);
+    if (w === "rain") { layers.push(["rain", { type: "highpass", cutoff: 1800, rate: 1.15, vol: 0.055 }]); layers.push(wet); }
+    if (w === "fog") layers.push(["deep", { type: "lowpass", cutoff: 240, rate: 0.4, vol: 0.045 }]);
+    if (w === "heat") layers.push(["hiss", { type: "highpass", cutoff: 3200, rate: 0.9, vol: 0.022 }]);
+    if (w === "frog") layers.push(["frog", { type: "bandpass", cutoff: 260, q: 1.4, rate: 0.5, vol: 0.03 }]);
+    if (w === "glow") layers.push(["deep", { type: "lowpass", cutoff: 300, rate: 0.5, vol: 0.05 }]);
+    if (w === "gold") layers.push(["deep", { type: "lowpass", cutoff: 320, rate: 0.45, vol: 0.04 }]);
+    return layers;
+  }
+
+  /* ---- 具体音效 ---- */
+  const sfx = {
+    // 抛竿：渔线出线的"唰"
+    cast() {
+      noiseHit(0.26, 0.075, { type: "bandpass", cutoff: 2600, cutoffTo: 700, q: 1.1, rate: 1.2 });
+      tone(760, 0.12, "triangle", 0.035, { to: 320, filter: "bandpass", cutoff: 1600 });
+    },
+    // 入水：水花 + 气泡
+    splash(power = 1) {
+      noiseHit(0.34, 0.1 * power, { type: "lowpass", cutoff: 2400, cutoffTo: 320, q: 0.8 });
+      noiseHit(0.14, 0.05 * power, { type: "highpass", cutoff: 1600, delay: 0.02 });
+      tone(180, 0.22, "sine", 0.05 * power, { to: 80 });
+      for (let i = 0; i < 3; i++) tone(520 + Math.random() * 500, 0.06, "sine", 0.018, { delay: 0.05 + i * 0.07 });
+    },
+    // 等待中的水面轻拍
+    idleWater() {
+      noiseHit(0.18, 0.014, { type: "lowpass", cutoff: 700, cutoffTo: 400 });
+    },
+    // 咬钩：竿尖一顿 + 浮漂下沉
+    bite() {
+      tone(1180, 0.05, "square", 0.05);
+      tone(620, 0.14, "triangle", 0.055, { to: 300, delay: 0.03 });
+      noiseHit(0.12, 0.04, { type: "bandpass", cutoff: 1000, q: 1.2, delay: 0.02 });
+    },
+    // 拉扯：渔线张力
+    tug() {
+      tone(140, 0.2, "sawtooth", 0.045, { to: 260, filter: "lowpass", cutoff: 700 });
+      tone(96, 0.26, "square", 0.03, { to: 180, delay: 0.04, filter: "lowpass", cutoff: 500 });
+    },
+    // 收线：棘轮循环（按拍调用）
+    reel(step = 0, speed = 1) {
+      noiseHit(0.045, 0.03, { type: "bandpass", cutoff: 1800 + (step % 3) * 260, q: 6 });
+      tone(300 + (step % 4) * 40, 0.03, "square", 0.02);
+    },
+    // 入舱：鱼尾拍水 + 甲板扑腾
+    land(rarity = 1) {
+      noiseHit(0.2, 0.085, { type: "lowpass", cutoff: 1500, cutoffTo: 320 });
+      for (let i = 0; i < 2 + Math.min(3, rarity); i++) {
+        noiseHit(0.07, 0.05, { type: "bandpass", cutoff: 900, q: 2, delay: 0.1 + i * 0.11 });
+      }
+    },
+    // 脱钩：线一松
+    slip() {
+      tone(420, 0.3, "sawtooth", 0.05, { to: 90, filter: "lowpass", cutoff: 900 });
+      noiseHit(0.16, 0.03, { type: "highpass", cutoff: 2000, delay: 0.02 });
+    },
+    // 杂物：闷响
+    junk() {
+      tone(150, 0.18, "square", 0.045, { to: 90, filter: "lowpass", cutoff: 600 });
+      noiseHit(0.14, 0.04, { type: "lowpass", cutoff: 500 });
+    },
+    // 收获"叮"，音高随品质上升
+    reward(rarity = 1) {
+      const base = 620 + rarity * 90;
+      tone(base, 0.16, "triangle", 0.05);
+      tone(base * 1.5, 0.2, "sine", 0.03, { delay: 0.06 });
+      if (rarity >= 3) tone(base * 2, 0.34, "sine", 0.028, { delay: 0.13 });
+    },
+    // 传说级：上行琶音
+    fanfare() {
+      [0, 4, 7, 12, 16].forEach((s, i) => {
+        tone(523.25 * Math.pow(2, s / 12), 0.5, "triangle", 0.05, { delay: i * 0.075 });
+      });
+      tone(1046.5, 0.7, "sine", 0.03, { delay: 0.4 });
+    },
+    // 声呐暴击：扫频 + 冲击
+    sonar() {
+      tone(320, 0.5, "sine", 0.045, { to: 2400, filter: "bandpass", cutoff: 1800, q: 1.4 });
+      noiseHit(0.4, 0.05, { type: "highpass", cutoff: 900, cutoffTo: 3200 });
+    },
+    // 金币：小额
+    coin() {
+      tone(1180, 0.06, "square", 0.04);
+      tone(1580, 0.16, "triangle", 0.03, { delay: 0.045 });
+    },
+    // 大奖：金币密集琶音 + 铜钟余韵
+    jackpot() {
+      for (let i = 0; i < 8; i++) tone(880 + i * 120, 0.12, "square", 0.03, { delay: i * 0.055 });
+      tone(220, 1.2, "sine", 0.05, { to: 110, delay: 0.2 });
+      tone(440, 1.0, "triangle", 0.03, { delay: 0.22 });
+    },
+    // 升级 / 通行证 / 签到奖励
+    levelup() {
+      [0, 5, 9, 12].forEach((s, i) => tone(392 * Math.pow(2, s / 12), 0.4, "triangle", 0.045, { delay: i * 0.08 }));
+    },
+    // UI：按下 / 切换
+    click() { tone(560, 0.035, "square", 0.028); },
+    toggleOn() { tone(520, 0.05, "square", 0.03); tone(780, 0.07, "square", 0.025, { delay: 0.04 }); },
+    toggleOff() { tone(520, 0.05, "square", 0.028); tone(360, 0.08, "square", 0.022, { delay: 0.04 }); },
+    // 倒计时紧迫
+    tick() { tone(1500, 0.04, "square", 0.035); },
+    // 打开面板
+    open() { tone(420, 0.08, "triangle", 0.035); tone(630, 0.1, "triangle", 0.03, { delay: 0.05 }); },
+    close() { tone(500, 0.07, "triangle", 0.03); tone(330, 0.1, "triangle", 0.025, { delay: 0.05 }); },
+    // 金币不足 / 操作被拒
+    deny() { tone(200, 0.16, "square", 0.04, { to: 150, filter: "lowpass", cutoff: 700 }); },
+    // 自动玩开始
+    autoStart() { [0, 7, 12].forEach((s, i) => tone(523.25 * Math.pow(2, s / 12), 0.16, "triangle", 0.04, { delay: i * 0.06 })); },
+  };
+
+  // 兼容旧调用：beep(freq, dur, type, gain)
+  function beep(freq, dur, type = "sine", gain = 0.04) {
+    tone(freq, dur, type, gain);
+  }
+
 
   function fmt(n) {
     return Math.floor(n).toLocaleString("en-US");
@@ -959,8 +1224,9 @@
     const cy = H * 0.42;
     const n = 10 + tier * 12;
     for (let i = 0; i < n; i++) spawnParticle(cx + (Math.random() - 0.5) * 80, cy, i % 2 ? "#ffd36a" : "#fff3c0");
-    beep(280 + tier * 140, 0.16, tier >= 3 ? "sawtooth" : "square", 0.05);
-    if (tier >= 3) setTimeout(() => beep(520, 0.18, "triangle", 0.05), 90);
+    // 派彩音：1~2 级金币声，3 级以上上行 + 铜钟
+    if (tier >= 3) { sfx.fanfare(); sfx.jackpot(); }
+    else sfx.coin();
   }
 
   function toast(msg) {
@@ -2113,7 +2379,7 @@
       } else {
         el.innerHTML = `<h3>空钩</h3><p>钩边没有对口的鱼</p>`;
       }
-      beep(140, 0.16, "sawtooth", 0.03);
+      sfx.slip();
     } else if (fish.loot) {
       if (fish.kind === "trash") {
         state.combo = 0;
@@ -2128,7 +2394,9 @@
       const tag = fish.kind === "jewel" ? "金饰" : fish.kind === "antique" ? "古董" : "垃圾";
       const cut = state.skipCut ? " · 七成" : "";
       el.innerHTML = `<h3>${fish.name}</h3><p>${tag} · +${fmt(reward.gold)} 金 · +${fmt(reward.points)} 分${cut}</p>`;
-      beep(fish.kind === "trash" ? 180 : 480 + fish.rarity * 60, 0.12, "square", 0.035);
+      if (fish.kind === "trash") sfx.junk();
+      else if (fish.rarity >= 3) sfx.fanfare();
+      else sfx.reward(fish.rarity);
     } else {
       state.combo += 1;
       $("streak").hidden = state.combo < 2;
@@ -2136,7 +2404,9 @@
       el.classList.add("r" + fish.rarity);
       const cut = state.skipCut ? " · 七成" : "";
       el.innerHTML = `<h3>${fish.name}</h3><p>+${fmt(reward.gold)} 金 · +${fmt(reward.points)} 分${cut}</p>`;
-      beep(420 + fish.rarity * 80, 0.12, "square", 0.035);
+      sfx.land(fish.rarity);                       // 入舱：鱼尾拍水
+      if (fish.rarity >= 3) sfx.fanfare();
+      else sfx.reward(fish.rarity);
       $("stage").classList.remove("shake");
       void $("stage").offsetWidth;
       $("stage").classList.add("shake");
@@ -2149,6 +2419,12 @@
 
   function renderHud() {
     $("time").textContent = timeText(state.timeLeft);
+    // 最后 10 秒每秒"滴答"催紧（用秒数取整去重，避免每帧都响）
+    if (!state.paused && !state.ended) {
+      const sec = Math.ceil(state.timeLeft);
+      if (sec <= 10 && sec > 0 && sec !== renderHud._lastTick) { renderHud._lastTick = sec; sfx.tick(); }
+      if (sec > 10) renderHud._lastTick = null;
+    }
     $("wx-hud").textContent = wxLine();
     const castLabel = $("btn-cast")?.querySelector(".cast-label");
     if (castLabel) {
@@ -2359,13 +2635,13 @@
   function applyBite(line, found) {
     line.bite = found.fish;
     line.biteCreature = found.creature;
+    sfx.bite();                                   // 咬钩：竿尖一顿
     if (found.fish.loot) startFight(line, found.fish);
     else {
       line.phase = "approach";
       line.phaseT = 0;
       $("fight-hint").textContent = "有鱼咬钩！";
       $("fight-hint").classList.remove("hidden", "now");
-      beep(440, 0.08);
     }
   }
 
@@ -2615,7 +2891,7 @@
     state.gems -= 1;
     state.sonar = 8;
     toast("探鱼：对口鱼会发亮约 8 秒");
-    beep(720, 0.1, "triangle");
+    sfx.sonar();                                   // 声呐：扫频
     state.dirtyHud = true;
     renderHud();
   }
@@ -2649,6 +2925,7 @@
   function beginCast() {
     state.castBoost = state.slipBoost;
     state.slipBoost = 0;
+    sfx.cast();                                      // 抛竿：渔线出线
     const n = lineCount();
     state.lines = Array.from({ length: n }, (_, i) => {
       const line = makeLine(i, n);
@@ -2729,6 +3006,7 @@
         line.phase = "wait";
         line.phaseT = 0;
         ensureLure(hook);
+        sfx.splash(0.8 + boatOf().depth * 0.1);      // 入水水花
       }
     } else if (line.phase === "wait") {
       line.hookY += Math.sin(line.phaseT * 7) * 0.2;
@@ -2960,6 +3238,24 @@
       updateParticles(dt);
     }
     updateCamera(dt);
+    // 环境音：天气/异象变了就换层；收线时按拍打棘轮声
+    if (audio && !audio.__ambInit) { audio.__ambInit = 1; ambKey = ""; }
+    setAmbient(state.omenId || WEATHERS[state.wx].id, ambForWeather(state.omenId || WEATHERS[state.wx].id));
+    if (state.fishing && !state.paused) {
+      const isReel = state.lines.some((l) => !l.done && l.phase === "reel") || state.phase === "reel";
+      const isTug = state.lines.some((l) => !l.done && (l.phase === "fight" || l.phase === "approach"));
+      if (isReel) {
+        loop.__reelAcc = (loop.__reelAcc || 0) + dt;
+        if (loop.__reelAcc > 0.075) { loop.__reelAcc = 0; loop.__reelStep = (loop.__reelStep || 0) + 1; sfx.reel(loop.__reelStep, rodOf().reel || 1); }
+      } else if (isTug) {
+        loop.__tugAcc = (loop.__tugAcc || 0) + dt;
+        if (loop.__tugAcc > 0.5) { loop.__tugAcc = 0; sfx.tug(); }
+      } else {
+        // 水面轻拍，稀疏且随机，制造"在等"的感觉
+        loop.__idleAcc = (loop.__idleAcc || 0) + dt;
+        if (loop.__idleAcc > 1.4 + Math.random() * 2.6) { loop.__idleAcc = 0; sfx.idleWater(); }
+      }
+    }
     if (H < 80 || W < 80) resize();
     syncWeatherLook();
     state.wxBlend = Math.min(1, (state.wxBlend || 0) + dt * 1.35);
@@ -3013,6 +3309,16 @@
   }
 
   function bind() {
+    // 移动端必须在用户手势里创建/恢复 AudioContext，否则一直是 suspended（整局没声音）
+    const unlock = () => { unlockAudio(); };
+    window.addEventListener("pointerdown", unlock, { once: true, capture: true });
+    window.addEventListener("keydown", unlock, { once: true, capture: true });
+    window.addEventListener("touchstart", unlock, { once: true, capture: true, passive: true });
+    // 所有按钮统一加一个轻点击声（面板/开关类自己会再叠音效）
+    document.addEventListener("pointerdown", (e) => {
+      const b = e.target.closest && e.target.closest("button");
+      if (b && !b.disabled && !SND.quietClick) sfx.click();
+    }, { passive: true });
     bindDrawer("drawer-shop", "tab-shop");
     bindDrawer("drawer-bait", "tab-bait");
     $("btn-bet").onclick = () => {
@@ -3148,6 +3454,18 @@
     $("bp-tiers").onclick = (e) => {
       const b = e.target.closest("[data-bp]");
       if (b) claimBp(+b.dataset.bp);
+    };
+    if ($("btn-sound")) $("btn-sound").onclick = () => {
+      SND.on = !SND.on;
+      if (SND.on) { unlockAudio(); if (masterGain) masterGain.gain.value = 0.9; sfx.toggleOn(); }
+      else { if (masterGain) masterGain.gain.value = 0; sfx.toggleOff(); }
+      const b = $("btn-sound");
+      b.classList.toggle("off", !SND.on);
+      b.textContent = SND.on ? "♪" : "✕";
+      b.title = SND.on ? "音效：开" : "音效：关";
+      ambKey = "";                       // 重新开时让环境层重建
+      if (SND.on) setAmbient(state.omenId || WEATHERS[state.wx].id, ambForWeather(state.omenId || WEATHERS[state.wx].id));
+      state.dirtyHud = true;
     };
     $("btn-pause").onclick = () => {
       if (state.ended || state.helpOpen || state.modal) return;

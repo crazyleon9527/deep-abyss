@@ -95,6 +95,24 @@
 - 量竖屏布局时**必须先在 `#stage` 上把 `transform` 清掉**，否则 `getBoundingClientRect()`
   返回的是转过 90° 的坐标，读出来的数全是错的（会误判成"重叠/出界"）。
 
+### 音效（全程序合成，无音频文件）
+- 全部用 WebAudio 现场合成：`ac()` 建上下文与主输出 `masterGain`，环境层走 `ambGain`；
+  `tone()` 是振荡器+包络，`noiseHit()` 是噪声+滤波，`noise()` 生成 2 秒布朗噪声缓冲复用。
+  **不要引入 mp3/wav**：项目是 file:// 直开的零依赖页面，音频文件会拖慢首屏。
+- **移动端必须解锁**：`bind()` 里注册了 `pointerdown/keydown/touchstart` 的 once 监听调
+  `unlockAudio()`（`resume()` suspended 的 AudioContext）。iOS Safari 不在用户手势里
+  创建/恢复就一直没声音——这是最容易复发的问题，别删那段。
+- 音效清单在 `sfx` 对象里：cast / splash / idleWater / bite / tug / reel / land / slip /
+  junk / reward / fanfare / sonar / coin / jackpot / levelup / click / toggleOn / toggleOff /
+  tick / open / close / deny / autoStart。
+- 挂接点：`beginCast()`→cast；`updateLine()` 落底→splash；`applyBite()`→bite；
+  `loop()` 里按 `line.phase` 打 reel / tug / idleWater；`showCatch()`→land+reward/fanfare/junk/slip；
+  `flashWin()` 与 `hitJackpot()`→coin/jackpot；`buySonar()`→sonar；`renderHud()` 最后 10 秒→tick。
+- **环境音**：`setAmbient(key, ambForWeather(key))` 在 `loop()` 里调，key = 异象或天气 id；
+  变了才重建（内部比对 `ambKey`），海浪是基底，晴/阴/疾风/雨/雾/酷热/青蛙雨/磷光/金潮各有叠加层。
+- HUD 右上角 `#btn-sound` 是静音开关（♪ / ✕），切到关时把 `masterGain.gain` 置 0。
+- 旧的 `beep(freq,dur,type,gain)` 保留为 `tone()` 的薄封装，历史调用不会坏。
+
 ## 环境坑
 - 沙箱（workspace-write）下 **Chrome 起不来**（crashpad `OpenProcess` + mojo 拒绝访问），
   需 `danger-full-access` 才能跑本地无头浏览器实测；每次 pwsh 调用都要重新申请。
