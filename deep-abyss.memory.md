@@ -26,20 +26,28 @@
   原先奖池独占中间列、顶栏横跨整舞台，竖屏旋转后会压住右下按钮区。
 - **跑马灯必须与分数同一行居中**：用户明确说过"要往上移、与分数平齐，不能遮挡人物"。
   不要把它单独放一行横跨舞台。宽度 `max-width: clamp(120px, …, 260px)`，两端渐隐。
-- **下钩按钮**：必须完整显示下竿预测（本竿花费 / 饵·租·注 / 空钩亏与命中预估），
-  用户明确要求"要显示跟之前一样的信息"。做法是改成"矮而宽"的横版（约 140×52），
-  两行小字 6px 单行不换行；靠把护钩挪到顶栏 `#btn-charm`（原来是 `.controls` 里的
-  `.charm-btn`，已从 HTML 删除）腾出宽度。
-- **护钩**：顶栏小按钮（宝石图标 + 数量，26×26），顶栏钱包里的"护钩 关"文字已去掉
-  （`.hud-wallet .stat-item` 隐藏），避免和按钮重复；`charm-hud` 元素仍在，JS 继续更新。
+- **底部控件＝底部对齐的一横排**（2026-09 定稿，别再改回网格）：
+  `.controls` 是 `display:flex; align-items:flex-end`，六个控件依次是
+  `.feat-stack`（海怪+狂钩竖排）、`.sonar-stack`（护钩+探鱼竖排，中间一条亮线）、
+  `.bet-btn`、`.x3-btn`、`.cast-btn-wrap`（圆形 `#btn-cast` + 绝对定位的气泡）。
+  尺寸变量 `--btn = clamp(34px, 6.09cqi, 38px)`，整排约 234×56。
+  曾经用 3×3 网格摊成 383×158 的大方块，行间全是错落空洞，用户说"很多不对"，别回退。
+- **下钩按钮**：圆形主按钮，下竿预测放在**它上方的小气泡**里（`#cast-total` + `#cast-odds`），
+  气泡 `position:absolute; bottom:100%; pointer-events:none`（绝不能挡点击）。
+  用户明确要求"要显示跟之前一样的信息"（本竿花费 / 饵·租·注 / 空钩亏与命中预估）。
+- **护钩/探鱼**：一列上下两个矩形按钮，中间靠 `box-shadow: inset 0 -1px 0` 画分隔线。
+  用户否掉了 45° 斜线方案。**列宽必须 `flex: 0 0 auto`**，否则 min-content 太小会被压成细条。
+- **没有开船键**：用户要求删掉，改成**按住海面左/右半边持续开船**（`#steer-layer` 上
+  `pointerdown/pointermove`，按 clientX 相对舞台中线判方向），`pointerup/pointercancel/blur` 停止；
+  `steerUI()` 兜底避免按住 HUD/按钮误触发；收线中按下只提示一次"收线后再移船"。
 - 跑马灯条目数 `TICKER_KEEP = 6`，动画时长按内容宽度 ÷ `TICKER_SPEED(56px/s)` 反推，
   避免条带越滚越长、速度忽快忽慢。
 - **租金标在鱼竿/船只按钮上**：选中态由 `.item.active`（青色边框+光晕）表达，
   按钮标签只写价格（`FREE` / `租 80` / `租 220`），**不要再加"本竿/本船"前缀**（用户明确否掉）。
   侧栏 `.equipped` 已删掉"本竿租借"栏（`#rent-fee` 及其 JS 引用一并移除），
   "移船"提示栏也删掉了，现在只剩"咬钩"一栏。
-- **字号上限别乱给**：`cast-odds`("空钩亏 118 · 深渊鲱 25% · 约 +196") 在 8px 时宽约 136px，
-  给到 9px 会在 1024px 宽的平板舞台上被截断（那里 cqi 会把字号顶到上限）。
+- **版本标记** `#build-tag` 在信息条里（显示 `v55` 等），方便一眼确认浏览器加载的是哪一版样式；
+  `index.html` 也加了 `Cache-Control: no-store` 等 meta。用户反复遇到旧缓存，别删这个。
 - **推送**：本会话审批被关闭，`git_commit`/`git_push` 工具会以 "user did not approve" 拒绝；
   用户授权后用 pwsh `git -c user.name=leon -c user.email=leon@example.com commit` 提交
   （仓库里**没有**配置 git 身份，历史统一是 `leon <leon@example.com>`），`git push origin main` 推送。
@@ -48,12 +56,20 @@
   所以**桌面外观不要动**。
 
 ### CSS 坑（踩过，别再犯）
+- **引用已删除的 CSS 变量会让整条声明失效**：写过 `.controls .sonar-stack { width: var(--stack) }`
+  而 `--stack` 已被删掉 → 宽度退回 auto，加上 flex 默认 `flex-shrink:1`、列内只有图标+数字
+  （min-content 很小），那一列被压成 **17px 细条**，用户反复说"布局不对"就是这个。
+  改完 CSS 后**一定要扫一遍 `var(--x)` 有没有未定义的**。
+- **定位这类问题不要靠猜**：用 CDP 的 `CSS.getMatchedStylesForNode` 直接问浏览器
+  "这条元素命中了哪些 width/flex 规则"，比反复调数值快得多。
 - **`cqi` 在“容器元素自身”上不解析**：写成 `#stage { --s: clamp(0.42, calc(100cqi/1024), 1) }`
   再给后代继承，会得到非法值并使整条声明失效（宽度变 0）。必须把含 `cqi` 的长度直接写在
   **后代元素**上（`#stage` 的子/孙元素都可以）。
 - **旋转元素里的百分比位移不可靠**：`translate(-50%,-50%)`、`translateX(-100%)` 会被包含块/
   自身尺寸/旋转顺序重算。宁可先由父级 flex 居中，再只写 `rotate(90deg)`。
 - `#stage` 的 `margin: 0 auto` 在旋转/absolute 场景下会参与定位计算，需显式 `margin: 0`。
+- 量竖屏布局时**必须先在 `#stage` 上把 `transform` 清掉**，否则 `getBoundingClientRect()`
+  返回的是转过 90° 的坐标，读出来的数全是错的（会误判成"重叠/出界"）。
 
 ## 环境坑
 - 沙箱（workspace-write）下 **Chrome 起不来**（crashpad `OpenProcess` + mojo 拒绝访问），
