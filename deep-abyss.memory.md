@@ -34,9 +34,16 @@
   （`.hud-wallet .stat-item` 隐藏），避免和按钮重复；`charm-hud` 元素仍在，JS 继续更新。
 - 跑马灯条目数 `TICKER_KEEP = 6`，动画时长按内容宽度 ÷ `TICKER_SPEED(56px/s)` 反推，
   避免条带越滚越长、速度忽快忽慢。
-- **租金标在鱼竿/船只按钮上**：`renderShop()` 里选中的那根显示 `本竿 FREE` / `本竿租 220`
-  （船同理 `本船 …`），未选中的显示 `租 80`。侧栏 `.equipped` 已删掉"本竿租借"栏
-  （`#rent-fee` 及其 JS 引用一并移除），"移船"提示栏也删掉了，现在只剩"咬钩"一栏。
+- **租金标在鱼竿/船只按钮上**：选中态由 `.item.active`（青色边框+光晕）表达，
+  按钮标签只写价格（`FREE` / `租 80` / `租 220`），**不要再加"本竿/本船"前缀**（用户明确否掉）。
+  侧栏 `.equipped` 已删掉"本竿租借"栏（`#rent-fee` 及其 JS 引用一并移除），
+  "移船"提示栏也删掉了，现在只剩"咬钩"一栏。
+- **字号上限别乱给**：`cast-odds`("空钩亏 118 · 深渊鲱 25% · 约 +196") 在 8px 时宽约 136px，
+  给到 9px 会在 1024px 宽的平板舞台上被截断（那里 cqi 会把字号顶到上限）。
+- **推送**：本会话审批被关闭，`git_commit`/`git_push` 工具会以 "user did not approve" 拒绝；
+  用户授权后用 pwsh `git -c user.name=leon -c user.email=leon@example.com commit` 提交
+  （仓库里**没有**配置 git 身份，历史统一是 `leon <leon@example.com>`），`git push origin main` 推送。
+  注意 pwsh 里 `Out-File -Encoding utf8` 会给提交信息开头塞 BOM。
 - 桌面端靠 `display: contents` 让 `.hud-stats`/`.hud-center` 透明化，顶栏仍是一条横条，
   所以**桌面外观不要动**。
 
