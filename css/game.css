@@ -1516,15 +1516,31 @@ button, .drawer-tab, .item, .bait-item {
   .hud-wallet .stat-item:not(.wx) { display: none; }
   .hud-wallet .stat-sep { display: none; }
   .hud-right { min-width: fit-content; }
+  /* 注意不要给这些按钮设 min-width: 0 且不锁 flex：那样会被 flex 压扁成十几像素
+     （实测齿轮只剩 21px、钱包 77px）。用 flex: 0 0 auto + 保底宽度。 */
   .hud-right .hub-btn,
   .hud-right .pause-btn {
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 30px;
     min-height: 0;
     height: clamp(22px, 2.344cqi, 26px);
     padding: 0 clamp(5px, 0.781cqi, 8px);
     font-size: clamp(9px, 1.074cqi, 11px);
   }
   .hud-right .pause-btn { width: clamp(26px, 2.93cqi, 32px); }
+  /* 玩家信息条：不许被压扁，名字至少能读出来 */
+  .player-chip {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: clamp(120px, 22cqi, 160px);
+  }
+  .player-chip .player-meta { min-width: 0; }
+  .player-chip .player-meta b {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hud-wallet { flex: 0 0 auto; }
   /* 全服派彩条：与分数同一行居中，和两侧信息块平齐，不再压在水面上 */
   .ticker {
     grid-area: ticker;
@@ -1849,13 +1865,6 @@ button, .drawer-tab, .item, .bait-item {
     right: clamp(14px, 2.404cqi, 22px);
     border: clamp(3px, 0.641cqi, 5px) solid transparent;
     border-top-color: rgba(6, 11, 15, 0.92);
-  }
-  /* 版本标记：放在信息条里，小到不抢视线，但一眼能确认浏览器加载的是哪一版样式 */
-  .hud-stats .build-tag {
-    font-size: clamp(7px, 0.801cqi, 9px);
-    color: rgba(244, 234, 212, 0.38);
-    letter-spacing: 0.04em;
-    font-family: "Avenir Next", "Segoe UI", sans-serif;
   }
   .controls .cast-bubble-sep { display: none; }
   .controls #cast-total { color: var(--gold); font-weight: 600; }

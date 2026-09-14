@@ -1,4 +1,9 @@
 (() => {
+  /* 构建版本号：只出现在设置面板角落 + 控制台一行，
+     **不显示在游戏界面上**（用户明确要求，天气旁边挂个 vXX 太出戏）。
+     发版时改这里和 index.html 里的 ?v=。 */
+  const BUILD = "v65";
+  console.log("[Deep Abyss] build " + BUILD);
   /* 元素查询带缓存。原来每次 $() 都走 getElementById——实测静止时每帧 22 次，纯属浪费。
      缓存元素引用；被 innerHTML 重建过的元素 isConnected=false，会自动重查。
      setText 顺带做「值没变就不写 DOM」——原来每帧无条件写 8.7 次 textContent，
@@ -4011,7 +4016,7 @@
       const s = $("gear-sound"), m = $("gear-music");
       if (s) { s.classList.toggle("on", SND.on); setText($("gear-sound-state"), SND.on ? "开" : "关"); }
       if (m) { m.classList.toggle("on", music.on); setText($("gear-music-state"), music.on ? "开" : "关"); }
-      setText($("gear-ver"), $("build-tag") ? $("build-tag").textContent : "");
+      setText($("gear-ver"), BUILD);
       renderIdentity();
     }
     function openGear() { syncGear(); if (gearPanel) gearPanel.classList.remove("hidden"); }
