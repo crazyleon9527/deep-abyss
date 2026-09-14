@@ -132,6 +132,22 @@
 - HUD 右上角 `#btn-sound` 静音开关；file:// 模式下没有全局增益节点，
   静音要逐个改 `<audio>.volume`（见 `applyMasterVolume()`）。
 
+### 背景音乐（每种天气/异象一段，全部 CC0）
+- 9 首曲子放在 `assets/music/`（约 17.9MB，最大 `heat.mp3` 7.3MB），
+  全部来自 OpenGameArt 的 CC0 曲目，出处见 `assets/music/CREDITS.md`。
+  映射在 `MUSIC_FILES`：clear / overcast / wind / rain / heat / fog / frog / glow / gold。
+- 用 `<audio>` 元素**流式播放**，不解码成 AudioBuffer——几 MB 的曲子解码进内存会白占几十 MB。
+- **切换用「代次」(music.gen) 标记**：`playMusic` 里 `music.gen++`，所有淡入淡出定时器与
+  `canplay` 回调都先比对代次。曾经用「元素是否还在 music.playing 数组里」判断，
+  结果新曲被同一轮刚清空的数组误伤 → 一直不出声。
+- **首曲要预加载**（`preloadMusic()`，首次手势时调）：冷启动时曲子还没缓冲完，
+  `play()` 会停在 0 秒不出声；等 `canplay/loadeddata` 且 `readyState >= 2` 再播。
+  实测 9 首两轮全部正常。
+- 音量 `MUSIC_VOL = 0.34`（压低避免盖过音效）；HUD `#btn-music` 单独开关，
+  关音效时音乐一起静音。
+
+## 环境坑
+
 ### CSS 坑（踩过，别再犯）
 - **`const` 声明位置会引 TDZ 死锁启动**：把 `const SND = {...}` 放到音频代码块后面，
   但 `bind()` 里的闭包引用了它 → `bind()` 执行时撞「暂时性死区」抛 ReferenceError →

@@ -867,9 +867,134 @@
   // 播放真实音效；返回 false 表示没有素材（调用方回退到合成音）
   // 统一的总音量/静音应用：Web Audio 模式改 masterGain，
   // file:// 模式必须逐个改 <audio> 元素（没有全局增益节点）。
+  /* ============================ 背景音乐 ============================
+     每种天气 / 异象一段，全部来自 OpenGameArt 的 CC0 曲目（可商用、署名非强制），
+     清单见 assets/music/CREDITS.md。切换用双元素交叉淡入淡出（不叠加多首，省内存）。
+     和音效一样，file:// 与 http(s) 都用 <audio>：音乐不需要精确调度，
+     元素方式反而最省事（不用把几 MB 解码进内存）。 */
+  const MUSIC_VOL = 0.34;                 // 背景音乐相对音量（压低，别盖过音效）
+  const MUSIC_FILES = {
+    clear: "clear.ogg",
+    overcast: "overcast.mp3",
+    wind: "wind.mp3",
+    rain: "rain.ogg",
+    heat: "heat.wav",
+    fog: "fog.mp3",
+    frog: "frog.wav",
+    glow: "glow.mp3",
+    gold: "gold.ogg",
+  };
+  const MUSIC_BASE = "assets/music/";
+  const music = { key: "", playing: [], on: true, gen: 0, info: {} };
+  // 只读诊断：能在控制台直接看当前曲目 / 播放进度 / 几个元素在播
+  Object.defineProperty(music.info, "time", { get() { const L = music.playing[0]; return L ? +L.el.currentTime.toFixed(2) : 0; } });
+  Object.defineProperty(music.info, "paused", { get() { const L = music.playing[0]; return L ? L.el.paused : true; } });
+  Object.defineProperty(music.info, "vol", { get() { const L = music.playing[0]; return L ? +L.el.volume.toFixed(2) : 0; } });
+  window.__music = music.info;
+
+  function musicTargetVol() {
+    return (music.on && SND.on) ? MUSIC_VOL : 0;
+  }
+
+  /* 交叉淡入淡出：新曲从 0 升到目标，旧曲降到 0 后停掉。
+     用「代次」(music.gen) 判断这首是否还是当前曲：切换/停止时代次 +1，
+     所有定时器和加载回调都先比对代次，避免"已经被换掉的曲子又被播起来"。
+     （之前用「是否还在数组里」判断，结果同一轮里新曲被自己刚清空的数组误伤。） */
+  function fadeIn(L) {
+    const gen = music.gen;
+    let i = 0;
+    const iv = setInterval(() => {
+      if (gen !== music.gen) { clearInterval(iv); return; }
+      i++;
+      L.el.volume = Math.min(L.want, L.want * (i / 24));
+      if (i >= 24) clearInterval(iv);
+    }, 55);
+  }
+  function fadeOutAndStop(L) {
+    const gen = music.gen;
+    const from = L.el.volume;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      if (gen === music.gen) L.el.volume = Math.max(0, from * (1 - i / 24));
+      if (i >= 24) { clearInterval(iv); try { L.el.pause(); L.el.volume = 0; } catch (_) {} }
+    }, 55);
+  }
+
+  /* 预加载：启动时就把首曲拉起来缓冲，等真正要播时已经就绪。
+     否则刚进游戏时曲子文件（几百 KB ~ 几 MB）还没到，play() 会停在 0 秒不出声。
+     只预加载一个元素，不插入 DOM，也不播放。 */
+  let musicPreload = null;
+  function preloadMusic() {
+    try {
+      const first = MUSIC_FILES[WEATHERS[state.wx] && WEATHERS[state.wx].id] ? WEATHERS[state.wx].id : "clear";
+      const el = new Audio(MUSIC_BASE + MUSIC_FILES[first]);
+      el.preload = "auto";
+      el.loop = true;
+      el.volume = 0;
+      try { el.load(); } catch (_) {}
+      musicPreload = { el, key: first };
+    } catch (_) {}
+  }
+
+  function playMusic(key) {
+    if (key === music.key) return;
+    const file = MUSIC_FILES[key];
+    if (!file) return;
+    music.key = key;
+    music.gen++;                                  // 作废旧曲的一切定时器
+    const old = music.playing;
+    music.playing = [];
+    old.forEach(fadeOutAndStop);
+    const target = musicTargetVol();
+    if (target <= 0) return;
+    try {
+      // 正好是要播的曲子且已预加载 -> 直接复用那个已缓冲好的元素
+      let el;
+      if (musicPreload && musicPreload.key === key) { el = musicPreload.el; musicPreload = null; }
+      else { el = new Audio(MUSIC_BASE + file); }
+      el.loop = true;
+      el.preload = "auto";
+      el.volume = 0;
+      const L = { el, key, want: target };
+      const gen = music.gen;
+      const begin = () => {
+        if (gen !== music.gen) return;             // 已经被切走
+        if (el.readyState < 2) return;             // HAVE_CURRENT_DATA 之前不播
+        if (music.playing[0] !== L) music.playing = [L];
+        const p = el.play();
+        if (p && p.catch) p.catch(() => {});
+        fadeIn(L);
+      };
+      music.playing = [L];
+      el.addEventListener("canplay", begin);
+      el.addEventListener("loadeddata", begin);
+      try { el.load(); } catch (_) {}
+      begin();
+      music.info.key = key;
+    } catch (_) { music.playing = []; }
+  }
+
+  function stopMusic() {
+    music.gen++;                                  // 让所有待播回调失效
+    music.playing.forEach((L) => { try { L.el.pause(); L.el.volume = 0; } catch (_) {} });
+    music.playing = [];
+    music.key = "";
+  }
+
+  // 跟随当前天气/异象换曲
+  function syncMusic(wid) {
+    if (!music.on) return;
+    if (!MUSIC_FILES[wid]) return;
+    playMusic(wid);
+  }
+
   function applyMasterVolume() {
     const on = SND.on;
     if (masterGain) masterGain.gain.value = on ? 0.9 : 0;
+    // 背景音乐跟着总开关走
+    const mt = musicTargetVol();
+    music.playing.forEach((L) => { try { L.el.volume = mt; } catch (_) {} });
     if (fileMode) {
       audioPool.forEach((el, name) => {
         const def = SFX_FILES[name] || AMB_FILES[name];
@@ -3610,6 +3735,7 @@
     if (audio && !audio.__ambInit) { audio.__ambInit = 1; ambKey = ""; }
     const wxId = state.omenId || WEATHERS[state.wx].id;
     setAmbient(wxId, wxId);
+    syncMusic(wxId);
     if (state.fishing && !state.paused) {
       const isReel = state.lines.some((l) => !l.done && l.phase === "reel") || state.phase === "reel";
       const isTug = state.lines.some((l) => !l.done && (l.phase === "fight" || l.phase === "approach"));
@@ -3686,8 +3812,8 @@
     window.addEventListener("pointerdown", unlock, { once: true, capture: true });
     window.addEventListener("keydown", unlock, { once: true, capture: true });
     window.addEventListener("touchstart", unlock, { once: true, capture: true, passive: true });
-    // 首次手势时预加载真实音效（file:// 用 <audio>，见 loadViaAudioEl 注释）
-    const kickLoad = () => { ac(); loadClips(); };
+    // 首次手势时预加载真实音效（file:// 用 <audio>，见 loadViaAudioEl 注释）与首曲
+    const kickLoad = () => { ac(); loadClips(); preloadMusic(); };
     window.addEventListener("pointerdown", kickLoad, { once: true, capture: true });
     window.addEventListener("keydown", kickLoad, { once: true, capture: true });
     // 所有按钮统一加一个轻点击声（面板/开关类自己会再叠音效）
@@ -3841,6 +3967,16 @@
       b.title = SND.on ? "音效：开" : "音效：关";
       ambKey = "";                       // 重新开时让环境层重建
       if (SND.on) { const wid = state.omenId || WEATHERS[state.wx].id; setAmbient(wid, wid); }
+      state.dirtyHud = true;
+    };
+    if ($("btn-music")) $("btn-music").onclick = () => {
+      music.on = !music.on;
+      const b = $("btn-music");
+      b.classList.toggle("off", !music.on);
+      b.textContent = music.on ? "♫" : "✕";
+      b.title = music.on ? "背景音乐：开" : "背景音乐：关";
+      if (music.on) { unlockAudio(); const wid = state.omenId || WEATHERS[state.wx].id; music.key = ""; syncMusic(wid); }
+      else stopMusic();
       state.dirtyHud = true;
     };
     $("btn-pause").onclick = () => {
