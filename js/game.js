@@ -20,6 +20,13 @@
     textCache.set(el, s);
     el.textContent = s;
   }
+  /* 单个绑定出错不要连累其它绑定。
+     bind() 里几十个 onclick 是顺序执行的，中间一个 null 解引用会让
+     后面所有绑定静默失效（曾经因为删了 HUD 上的回流/冲榜按钮、
+     但代码里还在绑它们，导致齿轮等后续按钮全部没反应）。 */
+  function bindStep(name, fn) {
+    try { fn(); } catch (e) { (window.__bindErr = window.__bindErr || []).push(name + ": " + (e && e.message)); }
+  }
 
   const RODS = [
     { id: "basic", name: "稳竿", rent: 0, wait: 1, lure: 1, reel: 1, blurb: "常鱼稳咬", biteR: { 1: 1.28, 2: 0.95, 3: 0.68, 4: 0.48, 5: 0.32 } },
@@ -314,7 +321,34 @@
       tourneyStake: 0,
       tourneyMult: 0,
       tourneyClaimed: false,
+      playerName: "",
+      playerId: "",
     };
+  }
+
+  /* 玩家身份：没有就生成一次并持久化。
+     参照同类游戏——HUD 上展示头像 + 名称 + ID，与余额放在一起。 */
+  const NAME_POOL = ["深渊钓手", "夜潮渔人", "深海行者", "沉锚老李", "磷光船长", "浪里白条", "铁钩阿海", "月下渔火"];
+  const AVATAR_POOL = ["深", "潮", "锚", "钓", "浪", "磷", "钩", "渔"];
+  function ensureIdentity() {
+    if (!meta.playerName) {
+      meta.playerName = NAME_POOL[Math.floor(Math.random() * NAME_POOL.length)];
+      const n = 100000 + Math.floor(Math.random() * 900000);
+      meta.playerId = String(n);
+      meta.avatar = AVATAR_POOL[Math.floor(Math.random() * AVATAR_POOL.length)];
+      saveMeta();
+    }
+    if (!meta.avatar) meta.avatar = (meta.playerName || "深")[0];
+    return { name: meta.playerName, id: meta.playerId, avatar: meta.avatar };
+  }
+  function renderIdentity() {
+    const idn = ensureIdentity();
+    const pairs = [
+      ["player-name", idn.name], ["player-id", "ID " + idn.id], ["player-avatar", idn.avatar],
+      ["gear-name", idn.name], ["gear-id", "ID " + idn.id], ["gear-avatar", idn.avatar],
+    ];
+    pairs.forEach(([id, v]) => setText($(id), v));
+    return idn;
   }
   function loadMeta() {
     try {
@@ -542,8 +576,10 @@
     syncHubBtn();
   }
   function syncHubBtn() {
-    const btn = $("btn-hub");
-    if (btn) btn.classList.toggle("pulse", hubClaimable());
+    // 回流/冲榜已移进设置面板，主界面上没有按钮了；
+    // 有可领奖励时改成让"齿轮"按钮脉冲，提示玩家点进去。
+    const gear = $("btn-gear");
+    if (gear) gear.classList.toggle("pulse", hubClaimable());
   }
 
   let tickerLines = [];
@@ -878,7 +914,7 @@
     overcast: "overcast.mp3",
     wind: "wind.mp3",
     rain: "rain.ogg",
-    heat: "heat.wav",
+    heat: "heat.ogg",
     fog: "fog.mp3",
     frog: "frog.wav",
     glow: "glow.mp3",
@@ -886,100 +922,94 @@
   };
   const MUSIC_BASE = "assets/music/";
   const music = { key: "", playing: [], on: true, gen: 0, info: {} };
+  const dbg = {};               // 只读运行状态快照，供 window.__dbg() 排查问题
+  window.__dbg = () => dbg;
   // 只读诊断：能在控制台直接看当前曲目 / 播放进度 / 几个元素在播
-  Object.defineProperty(music.info, "time", { get() { const L = music.playing[0]; return L ? +L.el.currentTime.toFixed(2) : 0; } });
-  Object.defineProperty(music.info, "paused", { get() { const L = music.playing[0]; return L ? L.el.paused : true; } });
-  Object.defineProperty(music.info, "vol", { get() { const L = music.playing[0]; return L ? +L.el.volume.toFixed(2) : 0; } });
+  /* 只读诊断：控制台 __music 可看当前曲目 / 进度 / 音量 */
+  const musicCurrent = () => musicEls.get(music.key) || null;
+  Object.defineProperty(music.info, "time", { get() { const L = musicCurrent(); return L ? +L.el.currentTime.toFixed(2) : 0; } });
+  Object.defineProperty(music.info, "paused", { get() { const L = musicCurrent(); return L ? L.el.paused : true; } });
+  Object.defineProperty(music.info, "vol", { get() { const L = musicCurrent(); return L ? +L.el.volume.toFixed(2) : 0; } });
   window.__music = music.info;
 
   function musicTargetVol() {
     return (music.on && SND.on) ? MUSIC_VOL : 0;
   }
 
-  /* 交叉淡入淡出：新曲从 0 升到目标，旧曲降到 0 后停掉。
-     用「代次」(music.gen) 判断这首是否还是当前曲：切换/停止时代次 +1，
-     所有定时器和加载回调都先比对代次，避免"已经被换掉的曲子又被播起来"。
-     （之前用「是否还在数组里」判断，结果同一轮里新曲被自己刚清空的数组误伤。） */
-  function fadeIn(L) {
+  /* 每个天气一个**常驻**播放元素：创建起就一直播着，切换只改音量（交叉淡入淡出）。
+     为什么不每次新建元素再 play()：实测 file:// 下会偶发"play() 后一直 paused"，
+     因为新建/seek/pause 会让 readyState 退回加载中，起播时机不可控；
+     常驻元素一开始就进入稳定播放，切曲只动 volume，最可靠。
+     代价是 9 首同时存在（由浏览器管理解码），换来的是不出错。 */
+  const musicEls = new Map();      // key -> { el, want }
+  function musicEl(key) {
+    let L = musicEls.get(key);
+    if (L) return L;
+    if (!MUSIC_FILES[key]) return null;
+    try {
+      const el = new Audio(MUSIC_BASE + MUSIC_FILES[key]);
+      el.loop = true;
+      el.preload = "auto";
+      el.volume = 0;
+      L = { el, want: 0 };
+      musicEls.set(key, L);
+      const p = el.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) { return null; }
+    return L;
+  }
+  // 错峰把 9 首曲子都起起来（各自 0 音量），切曲时就不用等加载了
+  function preloadMusic() {
+    const keys = Object.keys(MUSIC_FILES);
+    let i = 0;
+    const next = () => {
+      if (i >= keys.length) { music.info.preloaded = musicEls.size; return; }
+      musicEl(keys[i]);
+      i++;
+      music.info.preloaded = musicEls.size;
+      setTimeout(next, 900);
+    };
+    next();
+  }
+
+  /* 交叉淡入淡出：只改音量，不碰播放状态 */
+  function fadeEls() {
     const gen = music.gen;
     let i = 0;
     const iv = setInterval(() => {
       if (gen !== music.gen) { clearInterval(iv); return; }
       i++;
-      L.el.volume = Math.min(L.want, L.want * (i / 24));
+      musicEls.forEach((L, k) => {
+        const goal = (k === music.key) ? L.want : 0;
+        L.el.volume = Math.max(0, Math.min(1, L.el.volume + (goal - L.el.volume) * 0.18));
+      });
       if (i >= 24) clearInterval(iv);
     }, 55);
-  }
-  function fadeOutAndStop(L) {
-    const gen = music.gen;
-    const from = L.el.volume;
-    let i = 0;
-    const iv = setInterval(() => {
-      i++;
-      if (gen === music.gen) L.el.volume = Math.max(0, from * (1 - i / 24));
-      if (i >= 24) { clearInterval(iv); try { L.el.pause(); L.el.volume = 0; } catch (_) {} }
-    }, 55);
-  }
-
-  /* 预加载：启动时就把首曲拉起来缓冲，等真正要播时已经就绪。
-     否则刚进游戏时曲子文件（几百 KB ~ 几 MB）还没到，play() 会停在 0 秒不出声。
-     只预加载一个元素，不插入 DOM，也不播放。 */
-  let musicPreload = null;
-  function preloadMusic() {
-    try {
-      const first = MUSIC_FILES[WEATHERS[state.wx] && WEATHERS[state.wx].id] ? WEATHERS[state.wx].id : "clear";
-      const el = new Audio(MUSIC_BASE + MUSIC_FILES[first]);
-      el.preload = "auto";
-      el.loop = true;
-      el.volume = 0;
-      try { el.load(); } catch (_) {}
-      musicPreload = { el, key: first };
-    } catch (_) {}
   }
 
   function playMusic(key) {
     if (key === music.key) return;
-    const file = MUSIC_FILES[key];
-    if (!file) return;
+    if (!MUSIC_FILES[key]) return;
     music.key = key;
-    music.gen++;                                  // 作废旧曲的一切定时器
-    const old = music.playing;
-    music.playing = [];
-    old.forEach(fadeOutAndStop);
+    music.gen++;
     const target = musicTargetVol();
-    if (target <= 0) return;
-    try {
-      // 正好是要播的曲子且已预加载 -> 直接复用那个已缓冲好的元素
-      let el;
-      if (musicPreload && musicPreload.key === key) { el = musicPreload.el; musicPreload = null; }
-      else { el = new Audio(MUSIC_BASE + file); }
-      el.loop = true;
-      el.preload = "auto";
-      el.volume = 0;
-      const L = { el, key, want: target };
-      const gen = music.gen;
-      const begin = () => {
-        if (gen !== music.gen) return;             // 已经被切走
-        if (el.readyState < 2) return;             // HAVE_CURRENT_DATA 之前不播
-        if (music.playing[0] !== L) music.playing = [L];
-        const p = el.play();
-        if (p && p.catch) p.catch(() => {});
-        fadeIn(L);
-      };
-      music.playing = [L];
-      el.addEventListener("canplay", begin);
-      el.addEventListener("loadeddata", begin);
-      try { el.load(); } catch (_) {}
-      begin();
-      music.info.key = key;
-    } catch (_) { music.playing = []; }
+    Object.keys(MUSIC_FILES).forEach((k) => {
+      const L = musicEls.get(k);
+      if (L) L.want = (k === key) ? target : 0;
+    });
+    const L = musicEl(key);
+    if (L) {
+      L.want = target;
+      if (target > 0 && L.el.paused) { const p = L.el.play(); if (p && p.catch) p.catch(() => {}); }
+    }
+    fadeEls();
+    music.info.key = key;
   }
 
   function stopMusic() {
-    music.gen++;                                  // 让所有待播回调失效
-    music.playing.forEach((L) => { try { L.el.pause(); L.el.volume = 0; } catch (_) {} });
-    music.playing = [];
+    music.gen++;
     music.key = "";
+    musicEls.forEach((L) => { L.want = 0; try { L.el.volume = 0; L.el.pause(); } catch (_) {} });
   }
 
   // 跟随当前天气/异象换曲
@@ -992,9 +1022,9 @@
   function applyMasterVolume() {
     const on = SND.on;
     if (masterGain) masterGain.gain.value = on ? 0.9 : 0;
-    // 背景音乐跟着总开关走
+    // 背景音乐跟着总开关走：所有常驻元素一起淡到位
     const mt = musicTargetVol();
-    music.playing.forEach((L) => { try { L.el.volume = mt; } catch (_) {} });
+    musicEls.forEach((L, k) => { L.want = (k === music.key) ? mt : 0; L.el.volume = Math.max(0, Math.min(1, mt)); });
     if (fileMode) {
       audioPool.forEach((el, name) => {
         const def = SFX_FILES[name] || AMB_FILES[name];
@@ -3736,6 +3766,21 @@
     const wxId = state.omenId || WEATHERS[state.wx].id;
     setAmbient(wxId, wxId);
     syncMusic(wxId);
+    // 只读诊断：控制台 __dbg() 能看到帧、天气计时、音乐当前曲目，排查换曲问题很方便
+    dbg.raf++;
+    dbg.wxId = wxId;
+    dbg.wxT = +(state.wxT || 0).toFixed(1);
+    dbg.wx = WEATHERS[state.wx].name;
+    dbg.omen = state.omenId;
+    dbg.helpOpen = state.helpOpen;
+    dbg.paused = state.paused;
+    dbg.ended = state.ended;
+    dbg.musicKey = music.key;
+    dbg.musicTime = music.info.time;
+    dbg.musicPaused = music.info.paused;
+    dbg.musicPreloaded = music.info.preloaded;
+    dbg.musicOn = music.on;
+    dbg.soundOn = SND.on;
     if (state.fishing && !state.paused) {
       const isReel = state.lines.some((l) => !l.done && l.phase === "reel") || state.phase === "reel";
       const isTug = state.lines.some((l) => !l.done && (l.phase === "fight" || l.phase === "approach"));
@@ -3918,8 +3963,9 @@
       sawHelp = true;
       state.helpOpen = false;      $("help-mask").classList.add("hidden");
     };
-    $("btn-hub").onclick = () => (modalOn("hub") ? closeModal() : openPanel("hub", "收线后再打开回流"));
-    $("btn-rank").onclick = () => (modalOn("rank") ? closeModal() : openPanel("rank", "收线后再看冲榜"));
+    // 回流 / 冲榜：入口已移进设置面板，这里只保留逻辑供面板调用
+    const openHub = () => (modalOn("hub") ? closeModal() : openPanel("hub", "收线后再打开回流"));
+    const openRank = () => (modalOn("rank") ? closeModal() : openPanel("rank", "收线后再看冲榜"));
     $("btn-rank-close").onclick = closeModal;
     $("btn-share-close").onclick = closeModal;
     $("share-copy").onclick = async () => {
@@ -3957,28 +4003,43 @@
       const b = e.target.closest("[data-bp]");
       if (b) claimBp(+b.dataset.bp);
     };
-    if ($("btn-sound")) $("btn-sound").onclick = () => {
+    /* ---- 系统设置面板（齿轮）----
+       音效/音乐开关、回流/冲榜都收进来，不再占用主界面。 */
+    const gearPanel = $("gear-panel");
+    function syncGear() {
+      if (!gearPanel) return;
+      const s = $("gear-sound"), m = $("gear-music");
+      if (s) { s.classList.toggle("on", SND.on); setText($("gear-sound-state"), SND.on ? "开" : "关"); }
+      if (m) { m.classList.toggle("on", music.on); setText($("gear-music-state"), music.on ? "开" : "关"); }
+      setText($("gear-ver"), $("build-tag") ? $("build-tag").textContent : "");
+      renderIdentity();
+    }
+    function openGear() { syncGear(); if (gearPanel) gearPanel.classList.remove("hidden"); }
+    function closeGear() { if (gearPanel) gearPanel.classList.add("hidden"); }
+    if ($("btn-gear")) $("btn-gear").onclick = () => {
+      if (state.ended) return;
+      if (gearPanel && gearPanel.classList.contains("hidden")) { openGear(); sfx.open(); }
+      else { closeGear(); sfx.close(); }
+    };
+    if ($("gear-close")) $("gear-close").onclick = () => { closeGear(); sfx.close(); };
+    if ($("gear-sound")) $("gear-sound").onclick = () => {
       SND.on = !SND.on;
       applyMasterVolume();
-      if (SND.on) { unlockAudio(); sfx.toggleOn(); } else { sfx.toggleOff(); }
-      const b = $("btn-sound");
-      b.classList.toggle("off", !SND.on);
-      b.textContent = SND.on ? "♪" : "✕";
-      b.title = SND.on ? "音效：开" : "音效：关";
-      ambKey = "";                       // 重新开时让环境层重建
+      if (SND.on) { unlockAudio(); sfx.toggleOn(); } else sfx.toggleOff();
+      syncGear();
+      ambKey = "";
       if (SND.on) { const wid = state.omenId || WEATHERS[state.wx].id; setAmbient(wid, wid); }
       state.dirtyHud = true;
     };
-    if ($("btn-music")) $("btn-music").onclick = () => {
+    if ($("gear-music")) $("gear-music").onclick = () => {
       music.on = !music.on;
-      const b = $("btn-music");
-      b.classList.toggle("off", !music.on);
-      b.textContent = music.on ? "♫" : "✕";
-      b.title = music.on ? "背景音乐：开" : "背景音乐：关";
-      if (music.on) { unlockAudio(); const wid = state.omenId || WEATHERS[state.wx].id; music.key = ""; syncMusic(wid); }
-      else stopMusic();
+      if (music.on) { unlockAudio(); preloadMusic(); music.key = ""; syncMusic(state.omenId || WEATHERS[state.wx].id); sfx.toggleOn(); }
+      else { stopMusic(); sfx.toggleOff(); }
+      syncGear();
       state.dirtyHud = true;
     };
+    if ($("gear-hub")) $("gear-hub").onclick = () => { closeGear(); openHub(); };
+    if ($("gear-rank")) $("gear-rank").onclick = () => { closeGear(); openRank(); };
     $("btn-pause").onclick = () => {
       if (state.ended || state.helpOpen || state.modal) return;
       state.paused = true;
@@ -4088,8 +4149,9 @@
   else if (orient.addListener) orient.addListener(layoutChrome);
   step("spawnCreatures", spawnCreatures);
   step("renderShop", renderShop);
+  step("renderIdentity", renderIdentity);
   step("renderHud", renderHud);
-  step("bind", bind);
+  step("bind", () => bindStep("bind", bind));
   step("syncHubBtn", syncHubBtn);
   step("seedTicker", seedTicker);
   step("ensureTourney", ensureTourney);

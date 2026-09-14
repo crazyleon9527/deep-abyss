@@ -10,7 +10,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Deep Abyss Challenge</title>
-  <link rel="stylesheet" href="css/game.css?v=63" />
+  <link rel="stylesheet" href="css/game.css?v=64" />
 </head>
 <body>
   <div id="stage">
@@ -36,7 +36,7 @@
           <span class="stat-item">目标<b id="goal-hud">○0</b></span>
           <span class="stat-item"><b id="time">02:00</b></span>
           <span class="stat-item wx" id="wx-hud">晴·平潮</span>
-          <span class="stat-item build-tag" id="build-tag">v63</span>
+          <span class="stat-item build-tag" id="build-tag">v64</span>
         </div>
         <div class="hud-center">
           <div class="jackpots" id="jackpots">
@@ -48,6 +48,14 @@
         </div>
       </div>
       <div class="hud-right">
+        <!-- 玩家信息：头像 + 名称/ID，和金额同一区域（参考同类游戏把身份与余额放在一起） -->
+        <div class="hud-bar player-chip" id="player-chip">
+          <span class="player-avatar" id="player-avatar" aria-hidden="true">深</span>
+          <span class="player-meta">
+            <b id="player-name">深渊钓手</b>
+            <small id="player-id">ID 000000</small>
+          </span>
+        </div>
         <div class="hud-bar hud-wallet">
           <span class="stat-item">护钩<b id="charm-hud">关</b></span>
           <span class="stat-sep"></span>
@@ -56,10 +64,7 @@
           <span class="gem-icon"></span>
           <b id="gems">4</b>
         </div>
-        <button id="btn-hub" class="hub-btn" type="button">回流</button>
-        <button id="btn-rank" class="hub-btn rank-btn" type="button">冲榜</button>
-        <button id="btn-sound" class="hub-btn sound-btn" type="button" title="音效开关" aria-label="音效开关">♪</button>
-        <button id="btn-music" class="hub-btn music-btn" type="button" title="背景音乐开关" aria-label="背景音乐开关">♫</button>
+        <button id="btn-gear" class="hub-btn gear-btn" type="button" title="设置" aria-label="设置">⚙</button>
         <button id="btn-pause" class="pause-btn" title="Pause">❚❚</button>
       </div>
       <div class="ticker" id="ticker">
@@ -179,6 +184,40 @@
         <button id="auto-close" class="auto-cancel" type="button">取消</button>
       </div>
     </div>
+    <!-- 系统设置：齿轮打开。音效/音乐开关、回流/冲榜都收在这里，
+         不再占用主界面（参考同类游戏把系统功能放进设置面板）。 -->
+    <div id="gear-panel" class="gear-panel copper hidden">
+      <div class="gear-head">
+        <span class="player-avatar big" id="gear-avatar" aria-hidden="true">深</span>
+        <span class="player-meta">
+          <b id="gear-name">深渊钓手</b>
+          <small id="gear-id">ID 000000</small>
+        </span>
+        <button id="gear-close" class="gear-close" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div class="gear-group">
+        <div class="gear-group-title">声音</div>
+        <button id="gear-sound" class="gear-toggle on" type="button">
+          <span class="auto-switch" aria-hidden="true"></span>
+          <span class="gear-toggle-txt">音效</span>
+          <span class="gear-toggle-state" id="gear-sound-state">开</span>
+        </button>
+        <button id="gear-music" class="gear-toggle on" type="button">
+          <span class="auto-switch" aria-hidden="true"></span>
+          <span class="gear-toggle-txt">背景音乐</span>
+          <span class="gear-toggle-state" id="gear-music-state">开</span>
+        </button>
+      </div>
+      <div class="gear-group">
+        <div class="gear-group-title">功能</div>
+        <div class="gear-actions">
+          <button id="gear-hub" class="gear-action" type="button">回流</button>
+          <button id="gear-rank" class="gear-action rank" type="button">冲榜</button>
+        </div>
+      </div>
+      <div class="gear-foot">Deep Abyss · <span id="gear-ver">v64</span></div>
+    </div>
+
     <div id="toast" class="toast hidden"></div>
     <div id="catch-card" class="catch-card hidden"></div>
     <div id="pause-mask" class="mask hidden">
@@ -253,6 +292,6 @@
       <button id="btn-help" class="cast-btn" type="button">知道了</button>
     </div>
   </div>
-  <script src="js/game.js?v=51"></script>
+  <script src="js/game.js?v=52"></script>
 </body>
 </html>

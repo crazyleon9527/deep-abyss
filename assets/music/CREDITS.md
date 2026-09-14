@@ -9,7 +9,7 @@
 | `overcast.mp3` | 阴 | Calm Loop（Relaxing） | [opengameart.org/content/calm-loop](https://opengameart.org/content/calm-loop) |
 | `wind.mp3` | 疾风 | Eye of the Storm | [opengameart.org/content/eye-of-the-storm](https://opengameart.org/content/eye-of-the-storm) |
 | `rain.ogg` | 雨 | Dark Rainy Night (ambience) | [opengameart.org/content/rain-and-thunders](https://opengameart.org/content/rain-and-thunders) |
-| `heat.mp3` | 酷热 | lifeWave2k | [opengameart.org/content/calm-ambient-3-lifewave-2k](https://opengameart.org/content/calm-ambient-3-lifewave-2k) |
+| `heat.ogg` | 酷热 | Caravan | [opengameart.org/content/desert-theme](https://opengameart.org/content/desert-theme) |
 | `fog.mp3` | 雾 | Deep Sea | [opengameart.org/content/deep-sea](https://opengameart.org/content/deep-sea) |
 | `frog.mp3` | 青蛙雨（异象） | forgotten path | [opengameart.org/content/forgotten-path](https://opengameart.org/content/forgotten-path) |
 | `glow.mp3` | 磷光海（异象） | Mystical Enigmatic Background Music | [opengameart.org/content/mystical-enigmatic-background-music](https://opengameart.org/content/mystical-enigmatic-background-music) |

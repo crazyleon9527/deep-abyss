@@ -143,8 +143,28 @@
 - **首曲要预加载**（`preloadMusic()`，首次手势时调）：冷启动时曲子还没缓冲完，
   `play()` 会停在 0 秒不出声；等 `canplay/loadeddata` 且 `readyState >= 2` 再播。
   实测 9 首两轮全部正常。
-- 音量 `MUSIC_VOL = 0.34`（压低避免盖过音效）；HUD `#btn-music` 单独开关，
-  关音效时音乐一起静音。
+- 音量 `MUSIC_VOL = 0.34`（压低避免盖过音效）；关音效时音乐一起静音。
+- **播放方式：每个天气一个「常驻」`<audio>` 元素**（`musicEls` / `musicEl()`），
+  创建起就一直播着，切曲只改 `volume` 做交叉淡入淡出（`fadeEls()`），**永不 pause/seek**。
+  试过三种写法，只有这个稳：①每次新建元素+`play()` → 偶发"一直 paused"；
+  ②复用预热元素时 `pause()`+`currentTime=0` 会把 `readyState` 打回加载中 → 永远起播不了；
+  ③并发预热 9 个元素会互相抢资源 → 也起播失败。常驻元素方案实测 **8/8 全通过**。
+- 启动后 `preloadMusic()` 错峰（每 0.9 秒一首）把 9 首曲子都起起来（各自 0 音量）。
+
+### HUD：玩家信息与系统设置（2026-09）
+- **玩家身份**：`ensureIdentity()` 首次生成并写入 meta（`playerName` / `playerId` / `avatar`，
+  三处可选池），`renderIdentity()` 渲染。HUD 右上角 `.player-chip`（头像+名称+ID）紧挨钱包，
+  和金额同一区域——用户明确要求"头像名称ID和金额一起展示"。
+- **设置面板**：`#btn-gear`（⚙）打开 `#gear-panel`，收纳音效/音乐开关（`gear-sound` /
+  `gear-music`，带开关样式）与回流/冲榜（`gear-hub` / `gear-rank`）。
+  **主界面上原来的 `btn-sound` / `btn-music` / `btn-hub` / `btn-rank` 已删除**，
+  对应 onclick 也一并移除，逻辑改由 `openHub()` / `openRank()` 提供。
+- `syncHubBtn()` 现在让**齿轮**脉冲（有奖励可领时），因为回流按钮不在主界面了。
+- 面板从顶部信息条下方展开（`top: 56px`），避开右下角"下钩"气泡；自带不透明底，
+  不能只靠 `.copper` 的半透明底（会看不清）。
+- **`bind()` 现在用 `bindStep()` 逐条兜底**：删掉 HUD 按钮却还留着它们的 onclick 时，
+  一个 `null` 解引用会让**后面所有绑定静默失效**（齿轮、暂停全都没反应），
+  已经踩过一次。改 UI 元素后记得跑一遍 `js` 里 `$("id")` 与 HTML id 的交叉比对。
 
 ## 环境坑
 
