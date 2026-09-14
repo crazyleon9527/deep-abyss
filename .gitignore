@@ -7,3 +7,4 @@ node_modules/
 assets/_grid.png
 .dsh-tmp/
 .dsh-*.mjs
+.dsh-launch.ps1

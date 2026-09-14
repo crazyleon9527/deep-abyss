@@ -113,6 +113,53 @@
 - HUD 右上角 `#btn-sound` 是静音开关（♪ / ✕），切到关时把 `masterGain.gain` 置 0。
 - 旧的 `beep(freq,dur,type,gain)` 保留为 `tone()` 的薄封装，历史调用不会坏。
 
+### 音效（真实录音 + 合成兜底）
+- 真实音效放在 `assets/sfx/`（74 个 OGG，约 3MB），全部 **CC0**：
+  Kenney（Interface / Impact / Digital / UI Audio）+
+  OpenGameArt「40 CC0 water-splash-slime SFX」「100 CC0 SFX #1/#2」。可商用、署名非强制。
+  清单见 `SOUND.md`。
+- **file:// 下只能用 `<audio>` 元素加载音频**。实测结论：
+  `fetch` → Failed to fetch；`XHR(arraybuffer)` → status 0 + onerror；`XHR(blob)` → onerror；
+  只有 `new Audio(url)` + `loadedmetadata` 能拿到本地 OGG。
+  所以 `loadClips()` 分两条路：`location.protocol === "file:"` 走元素池 `audioPool`（音效）
+  与 `ambPool`（环境层模板，播放时 `cloneNode` 避免与音效互相打断）；
+  http(s) 环境走 `fetch` + `decodeAudioData`（低延迟、可精确控音量）。
+  改动播放逻辑前先想清楚在哪种协议下跑。
+- `sfx.*` 每个方法都是「先 `if (play(...)) return;` 用真实音效，失败再走合成」，
+  所以素材缺失时游戏不会变哑。
+- 移动端解锁：`bind()` 里 `pointerdown/keydown/touchstart` 的 once 监听调 `unlockAudio()` +
+  `loadClips()`。iOS 不在用户手势里 resume 就一直 suspended。
+- HUD 右上角 `#btn-sound` 静音开关；file:// 模式下没有全局增益节点，
+  静音要逐个改 `<audio>.volume`（见 `applyMasterVolume()`）。
+
+### CSS 坑（踩过，别再犯）
+- **`const` 声明位置会引 TDZ 死锁启动**：把 `const SND = {...}` 放到音频代码块后面，
+  但 `bind()` 里的闭包引用了它 → `bind()` 执行时撞「暂时性死区」抛 ReferenceError →
+  整个启动中断 → `requestAnimationFrame(loop)` 永远排不上。
+  症状：**画布不画、倒计时不走、所有按钮没反应，而且 file:// 下连报错都看不到**
+  （只会看到 `Script error. @0`，没有文件和行号）。
+  所以：被启动期代码引用的常量一律声明在使用点之前。
+- **改了名字要全局搜**：把 `byId` 别名删掉时漏改了 `syncWeatherLook` 里一处调用，
+  同样导致 `loop()` 第一帧抛错、整局卡死。删除/重命名标识符后必须全文件 grep 一遍。
+- **file:// 下的错误信息会丢失**：`window.onerror` 只能拿到 "Script error."。
+  定位这类"静默卡死"最有效的手段是「在页面脚本之前注入 rAF/错误钩子」
+  （CDP `Page.addScriptToEvaluateOnNewDocument`），把 `loop` 包一层 try/catch 拿到真实堆栈；
+  用 Node + DOM 桩跑 `game.js` 有时会**假阴性**（分支没走到就不报错），不能只靠它。
+- **启动流程要逐步兜底**：末尾 `resize()/renderShop()/renderHud()/bind()/...` 已用
+  `step(name, fn)` 包成 try/catch，任何一步出错只记录不中断后面。
+  不要退回成裸调用，否则一个小错就会整局白屏。
+
+### 性能（2026-09 优化，实测每帧工作量）
+- 优化前静止时每帧：`getElementById` 22 次、`textContent` 写入 8.7 次、新建渐变 2 个。
+  优化后：**0 次 / 约 1 次 / 0 个**。
+- 手段：① `$()` 带元素缓存（`elCache` + `isConnected` 失效重查）；
+  ② `setText(el, txt)` 值没变就不写 DOM；③ sky/water/光柱渐变换成 `gradCache`/`beamCache`，
+  用 `gradV` 版本号在「尺寸变化 / 天气切换 / 过渡进度」时失效；
+  ④ `fmt()` 复用 `Intl.NumberFormat` 实例（原来 `toLocaleString` 每次新建 ICU formatter，
+  是游戏函数自身耗时第一名）；⑤ 奖池数字限流到约 8 次/秒。
+- **DPR 上限 2**：3x 手机上按物理像素渲染等于 4 倍填充量，人眼几乎无差别但极吃 CPU。
+- 注意：改完 `js/game.js` 一定要把 `index.html` 里的 `game.js?v=` 一起 +1，否则浏览器用旧缓存。
+
 ## 环境坑
 - 沙箱（workspace-write）下 **Chrome 起不来**（crashpad `OpenProcess` + mojo 拒绝访问），
   需 `danger-full-access` 才能跑本地无头浏览器实测；每次 pwsh 调用都要重新申请。

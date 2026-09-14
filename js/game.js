@@ -1,5 +1,25 @@
 (() => {
-  const $ = (id) => document.getElementById(id);
+  /* 元素查询带缓存。原来每次 $() 都走 getElementById——实测静止时每帧 22 次，纯属浪费。
+     缓存元素引用；被 innerHTML 重建过的元素 isConnected=false，会自动重查。
+     setText 顺带做「值没变就不写 DOM」——原来每帧无条件写 8.7 次 textContent，
+     每次写入即便内容相同也可能触发样式重算，这是静止时吃 CPU 的主要来源之一。 */
+  const elCache = new Map();
+  const $ = (id) => {
+    const hit = elCache.get(id);
+    if (hit && hit.isConnected) return hit;
+    const el = document.getElementById(id);
+    if (el) elCache.set(id, el);
+    else elCache.delete(id);
+    return el;
+  };
+  const textCache = new Map();
+  function setText(el, txt) {
+    if (!el) return;
+    const s = String(txt);
+    if (textCache.get(el) === s) return;
+    textCache.set(el, s);
+    el.textContent = s;
+  }
 
   const RODS = [
     { id: "basic", name: "稳竿", rent: 0, wait: 1, lure: 1, reel: 1, blurb: "常鱼稳咬", biteR: { 1: 1.28, 2: 0.95, 3: 0.68, 4: 0.48, 5: 0.32 } },
@@ -391,16 +411,18 @@
     JACKS.forEach((j) => { meta.jp[j.id] += n * j.rate; });
   }
   function tickJackpots(dt) {
+    // 奖池数字很大，每帧格式化成千分位字符串其实只有偶尔才会变；
+    // 限流到约 8 次/秒，肉眼完全看不出差别，省下来的全是格式化开销。
+    tickJackpots._acc = (tickJackpots._acc || 0) + dt;
+    const paint = tickJackpots._acc >= 0.12;
+    if (paint) tickJackpots._acc = 0;
     JACKS.forEach((j) => {
       meta.jp[j.id] += j.idle * dt;
       jpShow[j.id] += (meta.jp[j.id] - jpShow[j.id]) * Math.min(1, dt * 6);
+      if (!paint) return;
       const el = $("jp-" + j.id);
       if (!el) return;
-      const txt = fmt(jpShow[j.id]);
-      if (el._v !== txt) {
-        el._v = txt;
-        el.textContent = txt;
-      }
+      setText(el, fmt(jpShow[j.id]));
     });
   }
   function hitJackpot(j) {
@@ -683,9 +705,13 @@
   const keys = { left: false, right: false };
 
   /* ============================ 音频 ============================
-     全部用 WebAudio 现场合成，不依赖音频文件：项目是 file:// 直开的零依赖页面，
-     加载 mp3 既会拖慢首屏，也不方便随设备调整音色。
-     结构：一个主输出 → 静音开关；环境层走单独的 ambGain，可以独立淡入淡出。
+     两层实现：
+     1) 真实音效（assets/sfx/*.ogg）——来自 Kenney（CC0）与 OpenGameArt「40 CC0 water /
+        splash / slime SFX」「100 CC0 SFX #1/#2」，全部 CC0，可商用、署名非强制。
+        预加载成 AudioBuffer，播放走 BufferSource，延迟低、可精确控音量。
+     2) 合成兜底（下面的 tone/noiseHit 与 sfx.* 合成实现）——文件没加载成功时用，
+        保证任何环境下游戏都不会变哑。
+     环境层用真实循环音（海浪/雨/气泡）交叉淡入淡出。
      重要：移动端（iOS Safari）必须在用户手势里创建/恢复 AudioContext，
      否则一直是 suspended，整个游戏没声音——所以有 unlockAudio()。 */
   let audio = null;
@@ -694,7 +720,201 @@
   let noiseBuf = null;
   let ambLayers = {};       // 环境层：{ key: { src, gain, filter } }
   let ambKey = "";
+  /* 注意：SND 必须在这里就声明。bind() 里的 kickLoad / unlock 闭包会引用它，
+     而 bind() 在启动阶段就执行——如果声明放到后面会撞「暂时性死区」(TDZ)，
+     启动直接中断、requestAnimationFrame(loop) 永远排不上，
+     表现就是整个游戏卡死：画布空白、倒计时不走、且不报明显错误。
+     这个坑我踩过一次，别再把 SND 往后挪。 */
   const SND = { on: true, unlockTried: false, quietClick: false };
+
+  // ---- 真实音效清单：逻辑名 -> [文件名, 音量] ----
+  const SFX_FILES = {
+    ui_click: ["ui_click.ogg", 0.32],
+    ui_click_soft: ["ui_click_soft.ogg", 0.26],
+    ui_select: ["ui_select.ogg", 0.34],
+    ui_select_alt: ["ui_select_alt.ogg", 0.3],
+    ui_confirm: ["ui_confirm.ogg", 0.4],
+    ui_confirm_big: ["ui_confirm_big.ogg", 0.45],
+    ui_error: ["ui_error.ogg", 0.34],
+    ui_deny: ["ui_deny.ogg", 0.34],
+    ui_open: ["ui_open.ogg", 0.34],
+    ui_close: ["ui_close.ogg", 0.32],
+    ui_switch_on: ["ui_switch_on.ogg", 0.3],
+    ui_switch_off: ["ui_switch_off.ogg", 0.3],
+    ui_back: ["ui_back.ogg", 0.34],
+    ui_drop: ["ui_drop.ogg", 0.4],
+    ui_reel: ["ui_reel.ogg", 0.22],
+    ui_scratch: ["ui_scratch.ogg", 0.4],
+    ui_bong: ["ui_bong.ogg", 0.42],
+    ui_pluck: ["ui_pluck.ogg", 0.34],
+    ui_maximize: ["ui_maximize.ogg", 0.36],
+    ui_minimize: ["ui_minimize.ogg", 0.32],
+    water_splash_sm: ["water_splash_sm.ogg", 0.5],
+    water_splash_md: ["water_splash_md.ogg", 0.6],
+    water_splash_big: ["water_splash_big.ogg", 0.7],
+    water_splash_cast: ["water_splash_cast.ogg", 0.55],
+    water_bubble_1: ["water_bubble_1.ogg", 0.35],
+    water_bubble_2: ["water_bubble_2.ogg", 0.35],
+    water_bubble_3: ["water_bubble_3.ogg", 0.35],
+    water_struggle_1: ["water_struggle_1.ogg", 0.5],
+    water_struggle_2: ["water_struggle_2.ogg", 0.5],
+    water_struggle_3: ["water_struggle_3.ogg", 0.5],
+    water_struggle_4: ["water_struggle_4.ogg", 0.5],
+    water_land_1: ["water_land_1.ogg", 0.6],
+    water_land_2: ["water_land_2.ogg", 0.6],
+    water_plop: ["water_plop.ogg", 0.5],
+    water_plop2: ["water_plop2.ogg", 0.5],
+    impact_soft: ["impact_soft.ogg", 0.5],
+    impact_wet: ["impact_wet.ogg", 0.5],
+    impact_wood: ["impact_wood.ogg", 0.55],
+    impact_metal: ["impact_metal.ogg", 0.45],
+    impact_stone: ["impact_stone.ogg", 0.5],
+    impact_hit: ["impact_hit.ogg", 0.45],
+    impact_slam: ["impact_slam.ogg", 0.5],
+    impact_glass: ["impact_glass.ogg", 0.4],
+    comp_ready: ["comp_ready.ogg", 0.4],
+    comp_power1: ["comp_power1.ogg", 0.4],
+    comp_pep1: ["comp_pep1.ogg", 0.4],
+    comp_pep2: ["comp_pep2.ogg", 0.4],
+    comp_pep3: ["comp_pep3.ogg", 0.4],
+    comp_high_up: ["comp_high_up.ogg", 0.4],
+    comp_high_down: ["comp_high_down.ogg", 0.38],
+    comp_phaser_up1: ["comp_phaser_up1.ogg", 0.42],
+    comp_phaser_up2: ["comp_phaser_up2.ogg", 0.42],
+    comp_phaser_dn1: ["comp_phaser_dn1.ogg", 0.4],
+    comp_laser1: ["comp_laser1.ogg", 0.35],
+    comp_laser5: ["comp_laser5.ogg", 0.35],
+    comp_low_three: ["comp_low_three.ogg", 0.4],
+    comp_phase_jump1: ["comp_phase_jump1.ogg", 0.38],
+    comp_phase_jump3: ["comp_phase_jump3.ogg", 0.38],
+    comp_zap1: ["comp_zap1.ogg", 0.35],
+    comp_twotone: ["comp_twotone.ogg", 0.38],
+  };
+  // 环境层素材：逻辑名 -> [文件名, 音量]
+  const AMB_FILES = {
+    amb_water_01: ["amb_water_01.ogg", 0.42],
+    amb_water_02: ["amb_water_02.ogg", 0.34],
+    amb_water_03: ["amb_water_03.ogg", 0.34],
+    amb_rain: ["amb_rain.ogg", 0.4],
+    amb_bubbles_1: ["amb_bubbles_1.ogg", 0.26],
+    amb_bubbles_2: ["amb_bubbles_2.ogg", 0.26],
+    amb_v2_water_01: ["amb_v2_water_01.ogg", 0.36],
+    amb_v2_water_02: ["amb_v2_water_02.ogg", 0.36],
+    amb_v2_water_03: ["amb_v2_water_03.ogg", 0.36],
+    amb_v2_amb_01: ["amb_v2_amb_01.ogg", 0.3],
+    amb_v2_amb_02: ["amb_v2_amb_02.ogg", 0.3],
+    amb_v2_amb_03: ["amb_v2_amb_03.ogg", 0.3],
+    amb_v2_amb_04: ["amb_v2_amb_04.ogg", 0.3],
+    amb_thunder: ["amb_thunder.ogg", 0.5],
+  };
+  const SFX_BASE = "assets/sfx/";
+  const clips = new Map();          // 逻辑名 -> { buf, vol }
+  let clipsReady = 0;
+  let clipsWanted = 0;
+
+  /* 读本地音频文件。
+     ⚠ 关键结论（实测过）：file:// 直开时 Chrome 把本地文件当跨域，
+       fetch / XHR(arraybuffer) / XHR(blob) 三种方式**全部被拦**（fetch: Failed to fetch，
+       XHR: status 0 + onerror）。唯一能读到本地 OGG 的途径是 HTMLAudioElement
+       （loadedmetadata 正常触发，duration 也对）。
+     所以：http(s) 环境用 fetch + decodeAudioData（延迟低、可精确控音量）；
+           file:// 环境回退到 <audio> 元素池（能出声，音量靠 element.volume）。
+     这条不能想当然，改之前先想清楚在哪种协议下跑。 */
+  const isFileProto = location.protocol === "file:";
+  const audioPool = new Map();     // file:// 模式：音效元素池（一拍一播，可复用）
+  const ambPool = new Map();       // file:// 模式：环境层模板元素（播放时克隆，避免与音效争用）
+  let fileMode = false;
+  const FILE_MASTER = 0.9;         // file:// 模式下的总音量系数（<audio> 各自音量相乘）
+  // 只读诊断信息，方便在控制台确认音效到底加载了多少 / 走的哪条路径
+  const sndInfo = {};
+  window.__snd = sndInfo;
+
+  function loadViaAudioEl(name, def, pool) {
+    const el = new Audio(SFX_BASE + def[0]);
+    el.preload = "auto";
+    pool.set(name, el);
+    clipsReady++;
+    sndInfo.ready = clipsReady;
+  }
+
+  function loadClips() {
+    const a = ac();
+    if (!a) return;
+    const names = [...Object.keys(SFX_FILES), ...Object.keys(AMB_FILES)];
+    clipsWanted = names.length;
+    sndInfo.wanted = clipsWanted;
+    sndInfo.mode = isFileProto ? "audio-element" : "webaudio";
+    // file://：直接用 <audio>，不用也不能用 fetch/XHR
+    if (isFileProto) {
+      fileMode = true;
+      Object.keys(SFX_FILES).forEach((n) => loadViaAudioEl(n, SFX_FILES[n], audioPool));
+      Object.keys(AMB_FILES).forEach((n) => loadViaAudioEl(n, AMB_FILES[n], ambPool));
+      return;
+    }
+    names.forEach(async (name) => {
+      const def = SFX_FILES[name] || AMB_FILES[name];
+      try {
+        const res = await fetch(SFX_BASE + def[0], { cache: "force-cache" });
+        if (!res.ok) return;
+        const buf = await a.decodeAudioData(await res.arrayBuffer());
+        clips.set(name, { buf, vol: def[1] });
+        clipsReady++;
+        sndInfo.ready = clipsReady;
+      } catch (_) { /* 单个失败不影响整体，播放时回退合成音 */ }
+    });
+  }
+
+  // 播放真实音效；返回 false 表示没有素材（调用方回退到合成音）
+  // 统一的总音量/静音应用：Web Audio 模式改 masterGain，
+  // file:// 模式必须逐个改 <audio> 元素（没有全局增益节点）。
+  function applyMasterVolume() {
+    const on = SND.on;
+    if (masterGain) masterGain.gain.value = on ? 0.9 : 0;
+    if (fileMode) {
+      audioPool.forEach((el, name) => {
+        const def = SFX_FILES[name] || AMB_FILES[name];
+        try { el.volume = Math.max(0, Math.min(1, def[1] * FILE_MASTER * (on ? 1 : 0))); } catch (_) {}
+      });
+      if (!on) Object.keys(ambLayers).forEach((k) => ambSetVol(ambLayers[k], 0));
+    }
+  }
+
+  function play(name, opt = {}) {
+    if (!SND.on) return true;
+    // file:// 模式：<audio> 元素池。不能叠加播放，所以同一个音效打断重播即可，
+    // 这对短音效（点击/水花/咬钩）听感完全够用。
+    if (fileMode) {
+      const el = audioPool.get(name);
+      if (!el) return false;
+      const def = SFX_FILES[name] || AMB_FILES[name];
+      try {
+        el.volume = Math.max(0, Math.min(1, (opt.vol != null ? opt.vol : def[1]) * FILE_MASTER * (SND.on ? 1 : 0)));
+        if (opt.rate) el.playbackRate = opt.rate;
+        el.currentTime = 0;
+        const p = el.play();
+        if (p && p.catch) p.catch(() => {});
+      } catch (_) {}
+      return true;
+    }
+    const a = ac();
+    const c = clips.get(name);
+    if (!a || !c) return !!c;
+    try {
+      const src = a.createBufferSource();
+      src.buffer = c.buf;
+      src.playbackRate.value = opt.rate || 1;
+      const g = a.createGain();
+      g.gain.value = (opt.vol != null ? opt.vol : c.vol);
+      src.connect(g);
+      g.connect(opt.dest || masterGain);
+      src.start(a.currentTime + (opt.delay || 0));
+      return true;
+    } catch (_) { return false; }
+  }
+  // 随机挑一个变体，避免重复听感
+  function playAny(names, opt) {
+    return play(names[Math.floor(Math.random() * names.length)], opt);
+  }
 
   function ac() {
     if (audio) return audio;
@@ -816,145 +1036,246 @@
     return { src, gain: g, filter: f, vol: cfg.vol || 0.05, lfo: cfg.lfo || 0 };
   }
 
-  function setAmbient(key, layers) {
-    if (!ac()) return;
-    if (key === ambKey) return;
-    ambKey = key;
-    const now = audio.currentTime;
-    Object.keys(ambLayers).forEach((k) => {
-      const L = ambLayers[k];
+  /* ---- 环境层：优先真实循环录音（海浪/雨/气泡），没有素材时回退合成噪声 ---- */
+  function ambLayerReal(key, cfg) {
+    const vol = (cfg && cfg.vol) || 0.3;
+    // file:// 模式：<audio> loop + 代码做淡入淡出。
+    // 必须克隆，否则会和音效共用同一个元素互相打断。
+    if (fileMode) {
+      const tpl = ambPool.get(key);
+      if (!tpl) return null;
+      const el = tpl.cloneNode(true);
+      el.loop = true;
+      el.preload = "auto";
+      el.volume = 0;
+      if (cfg && cfg.rate) el.playbackRate = Math.max(0.5, Math.min(2, cfg.rate));
+      const p = el.play();
+      if (p && p.catch) p.catch(() => {});
+      return { el, cur: 0, vol, real: true };
+    }
+    const a = ac();
+    const c = clips.get(key);
+    if (!a || !c) return ambLayer(key, cfg);
+    const src = a.createBufferSource();
+    src.buffer = c.buf;
+    src.loop = true;
+    const g = a.createGain();
+    g.gain.value = 0.0001;
+    src.connect(g);
+    g.connect(ambGain);
+    src.start();
+    return { src, gain: g, vol, real: true };
+  }
+
+  // 统一的环境层音量/淡出控制，屏蔽两种实现（BufferSource / <audio>）的差异
+  function ambSetVol(L, v) {
+    const t = Math.max(0, Math.min(1, v));
+    if (L.el) { L.cur = t; L.el.volume = t; }
+    else if (L.gain) L.gain.gain.value = t;
+  }
+  function ambGetVol(L) { return L.el ? L.cur : (L.gain ? L.gain.gain.value : 0); }
+  function ambFadeOut(L, now, secs) {
+    if (L.el) {
+      const from = L.cur, steps = 18;
+      for (let i = 1; i <= steps; i++) {
+        setTimeout(() => { if (L.el.isConnected !== false) L.el.volume = Math.max(0, from * (1 - i / steps)); }, (secs * 1000 * i) / steps);
+      }
+      setTimeout(() => { try { L.el.pause(); } catch (_) {} }, secs * 1000 + 60);
+    } else if (L.gain) {
       try {
         L.gain.gain.cancelScheduledValues(now);
         L.gain.gain.setValueAtTime(L.gain.gain.value, now);
-        L.gain.gain.linearRampToValueAtTime(0.0001, now + 0.8);
-        setTimeout(() => { try { L.src.stop(); } catch (_) {} }, 900);
+        L.gain.gain.linearRampToValueAtTime(0.0001, now + secs);
+        setTimeout(() => { try { L.src.stop(); } catch (_) {} }, secs * 1000 + 100);
       } catch (_) {}
+    }
+  }
+
+  /* 把 key 映射到真实循环素材；缺哪个就退回合成层名 */
+  function ambPlan(w) {
+    const plan = [["amb_water_01", { vol: 0.4 }]];                       // 基底：海浪
+    if (w === "clear") plan.push(["amb_v2_water_02", { vol: 0.3 }]);
+    if (w === "overcast") plan.push(["amb_v2_amb_01", { vol: 0.28 }]);
+    if (w === "wind") plan.push(["amb_v2_amb_03", { vol: 0.42 }]);
+    if (w === "rain") { plan.push(["amb_rain", { vol: 0.4 }]); plan.push(["amb_v2_water_03", { vol: 0.24 }]); }
+    if (w === "heat") plan.push(["amb_v2_amb_02", { vol: 0.22 }]);
+    if (w === "fog") plan.push(["amb_bubbles_1", { vol: 0.2 }]);
+    if (w === "frog") plan.push(["amb_bubbles_2", { vol: 0.24 }]);
+    if (w === "glow") { plan.push(["amb_bubbles_1", { vol: 0.26 }]); plan.push(["amb_v2_amb_04", { vol: 0.2 }]); }
+    if (w === "gold") plan.push(["amb_v2_amb_04", { vol: 0.3 }]);
+    return plan;
+  }
+
+  function setAmbient(key, w) {
+    if (!ac()) return;
+    if (key === ambKey) return;
+    if (fileMode && audioPool.size === 0) return;    // 素材还没就绪
+    ambKey = key;
+    const now = audio ? audio.currentTime : 0;
+    Object.keys(ambLayers).forEach((k) => {
+      try { ambFadeOut(ambLayers[k], now, 0.9); } catch (_) {}
     });
     ambLayers = {};
     if (!SND.on) return;
-    layers.forEach(([k, cfg]) => {
-      const L = ambLayer(k, cfg);
+    ambPlan(w).forEach(([k, cfg]) => {
+      const L = ambLayerReal(k, cfg);
       if (!L) return;
       ambLayers[k] = L;
-      L.gain.gain.setValueAtTime(0.0001, now);
-      L.gain.gain.linearRampToValueAtTime(L.vol, now + 1.2);
+      if (L.el) {
+        // <audio> 没有自动化参数，用短定时器做淡入
+        const target = L.vol;
+        let v = 0;
+        const steps = 16;
+        const iv = setInterval(() => {
+          v += target / steps;
+          if (v >= target) { v = target; clearInterval(iv); }
+          ambSetVol(L, v);
+        }, 80);
+      } else {
+        L.gain.gain.setValueAtTime(0.0001, now);
+        L.gain.gain.linearRampToValueAtTime(L.vol, now + 1.3);
+      }
     });
   }
 
+  // 合成兜底用的层参数（真实素材缺失时才会用到）
   function ambForWeather(w) {
-    // 基底：低频海浪涌动
-    const base = ["surf", { type: "lowpass", cutoff: 420, rate: 0.55, vol: 0.05, q: 0.7 }];
-    const wet = ["hiss", { type: "highpass", cutoff: 2600, rate: 1, vol: 0.018 }];
+    const base = ["surf", { type: "lowpass", cutoff: 420, rate: 0.55, vol: 0.06, q: 0.7 }];
     const layers = [base];
-    if (w === "overcast") layers.push(["wind", { type: "bandpass", cutoff: 620, q: 0.6, rate: 0.8, vol: 0.03 }]);
-    if (w === "wind") layers.push(["wind", { type: "bandpass", cutoff: 780, q: 0.5, rate: 1.05, vol: 0.075 }]);
-    if (w === "rain") { layers.push(["rain", { type: "highpass", cutoff: 1800, rate: 1.15, vol: 0.055 }]); layers.push(wet); }
-    if (w === "fog") layers.push(["deep", { type: "lowpass", cutoff: 240, rate: 0.4, vol: 0.045 }]);
-    if (w === "heat") layers.push(["hiss", { type: "highpass", cutoff: 3200, rate: 0.9, vol: 0.022 }]);
-    if (w === "frog") layers.push(["frog", { type: "bandpass", cutoff: 260, q: 1.4, rate: 0.5, vol: 0.03 }]);
-    if (w === "glow") layers.push(["deep", { type: "lowpass", cutoff: 300, rate: 0.5, vol: 0.05 }]);
-    if (w === "gold") layers.push(["deep", { type: "lowpass", cutoff: 320, rate: 0.45, vol: 0.04 }]);
+    if (w === "overcast") layers.push(["wind", { type: "bandpass", cutoff: 620, q: 0.6, rate: 0.8, vol: 0.035 }]);
+    if (w === "wind") layers.push(["wind", { type: "bandpass", cutoff: 780, q: 0.5, rate: 1.05, vol: 0.09 }]);
+    if (w === "rain") layers.push(["rain", { type: "highpass", cutoff: 1800, rate: 1.15, vol: 0.065 }]);
+    if (w === "fog") layers.push(["deep", { type: "lowpass", cutoff: 240, rate: 0.4, vol: 0.05 }]);
+    if (w === "heat") layers.push(["hiss", { type: "highpass", cutoff: 3200, rate: 0.9, vol: 0.026 }]);
+    if (w === "frog") layers.push(["frog", { type: "bandpass", cutoff: 260, q: 1.4, rate: 0.5, vol: 0.035 }]);
+    if (w === "glow") layers.push(["deep", { type: "lowpass", cutoff: 300, rate: 0.5, vol: 0.055 }]);
+    if (w === "gold") layers.push(["deep", { type: "lowpass", cutoff: 320, rate: 0.45, vol: 0.045 }]);
     return layers;
   }
 
-  /* ---- 具体音效 ---- */
+  /* ---- 音效：优先真实录音，缺失时回退到合成 ----
+     每个方法第一行 `if (play(...)) return;` 就是"有素材就用素材"。 */
   const sfx = {
     // 抛竿：渔线出线的"唰"
     cast() {
+      if (play("ui_scratch", { vol: 0.45 })) { play("water_splash_sm", { vol: 0.18, delay: 0.16 }); return; }
       noiseHit(0.26, 0.075, { type: "bandpass", cutoff: 2600, cutoffTo: 700, q: 1.1, rate: 1.2 });
       tone(760, 0.12, "triangle", 0.035, { to: 320, filter: "bandpass", cutoff: 1600 });
     },
     // 入水：水花 + 气泡
     splash(power = 1) {
+      if (power > 1.35) { if (play("water_splash_big", { vol: 0.5 + power * 0.12 })) { play("water_bubble_1", { delay: 0.12 }); return; } }
+      else if (play("water_splash_md", { vol: 0.42 + power * 0.14 })) { play("water_bubble_2", { delay: 0.1 }); return; }
       noiseHit(0.34, 0.1 * power, { type: "lowpass", cutoff: 2400, cutoffTo: 320, q: 0.8 });
       noiseHit(0.14, 0.05 * power, { type: "highpass", cutoff: 1600, delay: 0.02 });
       tone(180, 0.22, "sine", 0.05 * power, { to: 80 });
-      for (let i = 0; i < 3; i++) tone(520 + Math.random() * 500, 0.06, "sine", 0.018, { delay: 0.05 + i * 0.07 });
     },
     // 等待中的水面轻拍
     idleWater() {
+      if (playAny(["water_plop", "water_bubble_3", "water_splash_sm"], { vol: 0.16 })) return;
       noiseHit(0.18, 0.014, { type: "lowpass", cutoff: 700, cutoffTo: 400 });
     },
     // 咬钩：竿尖一顿 + 浮漂下沉
     bite() {
+      if (play("ui_drop", { vol: 0.5 })) return;
       tone(1180, 0.05, "square", 0.05);
       tone(620, 0.14, "triangle", 0.055, { to: 300, delay: 0.03 });
-      noiseHit(0.12, 0.04, { type: "bandpass", cutoff: 1000, q: 1.2, delay: 0.02 });
     },
-    // 拉扯：渔线张力
+    // 拉扯：渔线张力（合成更贴切，真实素材里没有单独的线张力）
     tug() {
-      tone(140, 0.2, "sawtooth", 0.045, { to: 260, filter: "lowpass", cutoff: 700 });
-      tone(96, 0.26, "square", 0.03, { to: 180, delay: 0.04, filter: "lowpass", cutoff: 500 });
+      tone(140, 0.2, "sawtooth", 0.05, { to: 260, filter: "lowpass", cutoff: 700 });
+      tone(96, 0.26, "square", 0.035, { to: 180, delay: 0.04, filter: "lowpass", cutoff: 500 });
     },
-    // 收线：棘轮循环（按拍调用）
+    // 鱼挣扎：真实拍水声（随机变体，避免重复）
+    struggle() {
+      if (playAny(["water_struggle_1", "water_struggle_2", "water_struggle_3", "water_struggle_4"], { vol: 0.42, rate: 0.94 + Math.random() * 0.14 })) return;
+      noiseHit(0.16, 0.05, { type: "bandpass", cutoff: 760, q: 1.8 });
+    },
+    // 收线：棘轮（真实素材是短促的卷动声）
     reel(step = 0, speed = 1) {
+      if (play("ui_reel", { vol: 0.16, rate: 1.25 + (step % 3) * 0.09 })) return;
       noiseHit(0.045, 0.03, { type: "bandpass", cutoff: 1800 + (step % 3) * 260, q: 6 });
-      tone(300 + (step % 4) * 40, 0.03, "square", 0.02);
     },
     // 入舱：鱼尾拍水 + 甲板扑腾
     land(rarity = 1) {
-      noiseHit(0.2, 0.085, { type: "lowpass", cutoff: 1500, cutoffTo: 320 });
-      for (let i = 0; i < 2 + Math.min(3, rarity); i++) {
-        noiseHit(0.07, 0.05, { type: "bandpass", cutoff: 900, q: 2, delay: 0.1 + i * 0.11 });
+      if (playAny(["water_land_1", "water_land_2"], { vol: 0.55 })) {
+        const n = Math.min(3, rarity);
+        for (let i = 0; i < n; i++) play("impact_wet", { vol: 0.22, delay: 0.12 + i * 0.13, rate: 0.95 + i * 0.06 });
+        return;
       }
+      noiseHit(0.2, 0.085, { type: "lowpass", cutoff: 1500, cutoffTo: 320 });
     },
     // 脱钩：线一松
     slip() {
+      if (play("ui_back", { vol: 0.5 })) { play("comp_high_down", { vol: 0.22, delay: 0.05 }); return; }
       tone(420, 0.3, "sawtooth", 0.05, { to: 90, filter: "lowpass", cutoff: 900 });
-      noiseHit(0.16, 0.03, { type: "highpass", cutoff: 2000, delay: 0.02 });
     },
     // 杂物：闷响
     junk() {
+      if (playAny(["impact_stone", "impact_wood", "impact_soft"], { vol: 0.42 })) return;
       tone(150, 0.18, "square", 0.045, { to: 90, filter: "lowpass", cutoff: 600 });
-      noiseHit(0.14, 0.04, { type: "lowpass", cutoff: 500 });
     },
     // 收获"叮"，音高随品质上升
     reward(rarity = 1) {
+      if (rarity >= 3) { if (play("ui_confirm_big", { vol: 0.45, rate: 0.96 + rarity * 0.03 })) return; }
+      if (play("ui_confirm", { vol: 0.38, rate: 0.92 + rarity * 0.08 })) {
+        if (rarity >= 2) play("comp_high_up", { vol: 0.2, delay: 0.08 });
+        return;
+      }
       const base = 620 + rarity * 90;
       tone(base, 0.16, "triangle", 0.05);
-      tone(base * 1.5, 0.2, "sine", 0.03, { delay: 0.06 });
-      if (rarity >= 3) tone(base * 2, 0.34, "sine", 0.028, { delay: 0.13 });
     },
     // 传说级：上行琶音
     fanfare() {
-      [0, 4, 7, 12, 16].forEach((s, i) => {
-        tone(523.25 * Math.pow(2, s / 12), 0.5, "triangle", 0.05, { delay: i * 0.075 });
-      });
-      tone(1046.5, 0.7, "sine", 0.03, { delay: 0.4 });
+      if (play("comp_pep2", { vol: 0.5 })) {
+        play("comp_phaser_up2", { vol: 0.32, delay: 0.1 });
+        play("ui_bong", { vol: 0.3, delay: 0.24 });
+        return;
+      }
+      [0, 4, 7, 12, 16].forEach((s, i) => tone(523.25 * Math.pow(2, s / 12), 0.5, "triangle", 0.05, { delay: i * 0.075 }));
     },
-    // 声呐暴击：扫频 + 冲击
+    // 声呐暴击：扫频
     sonar() {
+      if (play("comp_phaser_up1", { vol: 0.5 })) { play("comp_laser5", { vol: 0.24, delay: 0.1 }); return; }
       tone(320, 0.5, "sine", 0.045, { to: 2400, filter: "bandpass", cutoff: 1800, q: 1.4 });
-      noiseHit(0.4, 0.05, { type: "highpass", cutoff: 900, cutoffTo: 3200 });
     },
     // 金币：小额
     coin() {
+      if (play("ui_select", { vol: 0.36 })) return;
       tone(1180, 0.06, "square", 0.04);
-      tone(1580, 0.16, "triangle", 0.03, { delay: 0.045 });
     },
-    // 大奖：金币密集琶音 + 铜钟余韵
+    // 大奖：密集 + 铜钟余韵
     jackpot() {
+      if (play("ui_bong", { vol: 0.55 })) {
+        for (let i = 0; i < 6; i++) play("ui_confirm", { vol: 0.26, delay: 0.05 + i * 0.06, rate: 1 + i * 0.05 });
+        play("comp_pep3", { vol: 0.4, delay: 0.3 });
+        return;
+      }
       for (let i = 0; i < 8; i++) tone(880 + i * 120, 0.12, "square", 0.03, { delay: i * 0.055 });
-      tone(220, 1.2, "sine", 0.05, { to: 110, delay: 0.2 });
-      tone(440, 1.0, "triangle", 0.03, { delay: 0.22 });
     },
     // 升级 / 通行证 / 签到奖励
     levelup() {
+      if (play("comp_power1", { vol: 0.45 })) { play("comp_pep1", { vol: 0.35, delay: 0.16 }); return; }
       [0, 5, 9, 12].forEach((s, i) => tone(392 * Math.pow(2, s / 12), 0.4, "triangle", 0.045, { delay: i * 0.08 }));
     },
     // UI：按下 / 切换
-    click() { tone(560, 0.035, "square", 0.028); },
-    toggleOn() { tone(520, 0.05, "square", 0.03); tone(780, 0.07, "square", 0.025, { delay: 0.04 }); },
-    toggleOff() { tone(520, 0.05, "square", 0.028); tone(360, 0.08, "square", 0.022, { delay: 0.04 }); },
+    click() { if (play("ui_click", { vol: 0.3 })) return; tone(560, 0.035, "square", 0.028); },
+    clickSoft() { if (play("ui_click_soft", { vol: 0.24 })) return; tone(500, 0.03, "square", 0.022); },
+    toggleOn() { if (play("ui_switch_on", { vol: 0.34 })) return; tone(520, 0.05, "square", 0.03); },
+    toggleOff() { if (play("ui_switch_off", { vol: 0.34 })) return; tone(360, 0.08, "square", 0.022); },
     // 倒计时紧迫
-    tick() { tone(1500, 0.04, "square", 0.035); },
-    // 打开面板
-    open() { tone(420, 0.08, "triangle", 0.035); tone(630, 0.1, "triangle", 0.03, { delay: 0.05 }); },
-    close() { tone(500, 0.07, "triangle", 0.03); tone(330, 0.1, "triangle", 0.025, { delay: 0.05 }); },
+    tick() { if (play("ui_click_soft", { vol: 0.22, rate: 1.5 })) return; tone(1500, 0.04, "square", 0.035); },
+    // 打开 / 关闭面板
+    open() { if (play("ui_open", { vol: 0.36 })) return; tone(420, 0.08, "triangle", 0.035); },
+    close() { if (play("ui_close", { vol: 0.34 })) return; tone(500, 0.07, "triangle", 0.03); },
     // 金币不足 / 操作被拒
-    deny() { tone(200, 0.16, "square", 0.04, { to: 150, filter: "lowpass", cutoff: 700 }); },
+    deny() { if (play("ui_deny", { vol: 0.4 })) return; tone(200, 0.16, "square", 0.04); },
+    error() { if (play("ui_error", { vol: 0.4 })) return; tone(180, 0.18, "sawtooth", 0.04); },
+    // 购买
+    buy() { if (play("ui_select_alt", { vol: 0.38 })) return; tone(640, 0.08, "triangle", 0.04); },
+    buyBig() { if (play("impact_slam", { vol: 0.46 })) { play("ui_confirm_big", { vol: 0.34, delay: 0.08 }); return; } tone(280, 0.2, "sawtooth", 0.05); },
     // 自动玩开始
-    autoStart() { [0, 7, 12].forEach((s, i) => tone(523.25 * Math.pow(2, s / 12), 0.16, "triangle", 0.04, { delay: i * 0.06 })); },
+    autoStart() { if (play("comp_ready", { vol: 0.45 })) return; [0, 7, 12].forEach((s, i) => tone(523.25 * Math.pow(2, s / 12), 0.16, "triangle", 0.04, { delay: i * 0.06 })); },
   };
 
   // 兼容旧调用：beep(freq, dur, type, gain)
@@ -963,8 +1284,14 @@
   }
 
 
+  /* 数字千分位格式化。
+     原来用 Number.toLocaleString("en-US")——它每次调用都要新建 ICU formatter，
+     实测是 Profiler 里游戏函数自身耗时的第一名；奖池滚动每帧要格式 4 次，
+     加上分数/金币/宝石等一共十几次。改成复用一个 Intl.NumberFormat 实例，
+     快一个数量级，而且避免了逐帧无谓的格式分配。 */
+  const NF = new Intl.NumberFormat("en-US");
   function fmt(n) {
-    return Math.floor(n).toLocaleString("en-US");
+    return NF.format(Math.floor(n));
   }
   function pad(n) {
     return String(n).padStart(2, "0");
@@ -1014,9 +1341,11 @@
       state.wxFrom = state.wxSeen || "clear";
       state.wxSeen = id;
       state.wxBlend = 0;
+      bumpGrad();                    // 配色变了，渐变缓存作废
     }
     const stage = $("stage");
-    if (stage) stage.dataset.wx = id;
+    // 只在真的变了才写 dataset，避免每帧都碰 DOM
+    if (stage && stage.dataset.wx !== id) stage.dataset.wx = id;
   }
   const tideOf = () => TIDES[state.tide] || TIDES[1];
   function bonusOn() {
@@ -1249,6 +1578,34 @@
     });
   }
 
+  /* 渐变缓存：只在"尺寸 / 天气配色 / 过渡进度"变化时重建。
+     createLinearGradient 每帧调用很贵，实测静止时也在每秒重建 120 个。
+     注意 mixedLook() 返回的是插值后的颜色对象、不含天气 id，
+     所以这里用一个显式的版本号 gradV 来判失效，由天气切换与过渡进度推进。 */
+  const gradCache = { v: -1, sky: null, water: null };
+  const beamCache = { v: -1, list: null };
+  let gradV = 0;
+  function bumpGrad() { gradV++; }
+  function buildGradients(g, L) {
+    const skyH = H * 0.22;
+    const sky = g.createLinearGradient(0, 0, 0, skyH);
+    sky.addColorStop(0, L.sky[0]);
+    sky.addColorStop(0.55, L.sky[1]);
+    sky.addColorStop(1, L.sky[2]);
+    const water = g.createLinearGradient(0, skyH, 0, H);
+    water.addColorStop(0, L.water[0]);
+    water.addColorStop(0.22, L.water[1]);
+    water.addColorStop(0.55, L.water[2]);
+    water.addColorStop(1, L.water[3]);
+    gradCache.v = gradV;
+    gradCache.sky = sky;
+    gradCache.water = water;
+  }
+  function gradients(g, L) {
+    if (gradCache.v !== gradV || !gradCache.sky || !gradCache.water) buildGradients(g, L);
+    return gradCache;
+  }
+
   function resize() {
     const stage = $("stage");
     // 用布局尺寸而不是 getBoundingClientRect()：竖屏旋转兜底后，边界框返回的是旋转后的
@@ -1267,13 +1624,16 @@
     }
     // 画布用布局盒子（像素）而不是 100%：竖屏旋转兜底时 #stage 的百分比高度可能因
     // 包含块高度不确定而失效，100% 会跟着变形。
+    // DPR 上限 2：3x 手机上按物理像素渲染等于 4 倍填充量，人眼几乎看不出差别却极吃 CPU。
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     canvas.style.width = `${Math.max(80, w)}px`;
     canvas.style.height = `${Math.max(80, h)}px`;
-    canvas.width = Math.floor(Math.max(80, w) * devicePixelRatio);
-    canvas.height = Math.floor(Math.max(80, h) * devicePixelRatio);
-    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    canvas.width = Math.floor(Math.max(80, w) * dpr);
+    canvas.height = Math.floor(Math.max(80, h) * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     W = Math.max(80, w);
     H = Math.max(80, h);
+    bumpGrad();                    // 尺寸变了，缓存的渐变必须重建
   }
 
   function makeCreature(kindSpec, fromLeft, inView) {
@@ -1412,11 +1772,7 @@
   function drawSky(g, now) {
     const L = mixedLook();
     const skyH = H * 0.22;
-    const grd = g.createLinearGradient(0, 0, 0, skyH);
-    grd.addColorStop(0, L.sky[0]);
-    grd.addColorStop(0.55, L.sky[1]);
-    grd.addColorStop(1, L.sky[2]);
-    g.fillStyle = grd;
+    g.fillStyle = gradients(g, L).sky;
     g.fillRect(0, 0, W, skyH);
 
     if (L.stars > 0.05) {
@@ -1473,23 +1829,25 @@
   function drawWater(g, now) {
     const L = mixedLook();
     const skyH = H * 0.22;
-    const grd = g.createLinearGradient(0, skyH, 0, H);
-    grd.addColorStop(0, L.water[0]);
-    grd.addColorStop(0.22, L.water[1]);
-    grd.addColorStop(0.55, L.water[2]);
-    grd.addColorStop(1, L.water[3]);
-    g.fillStyle = grd;
+    g.fillStyle = gradients(g, L).water;
     g.fillRect(0, skyH - 4, W, H - skyH + 8 + (state.camY || 0) + 90);
 
     if (L.glow > 0.05) {
       g.save();
       g.globalAlpha = 0.12 * L.glow;
-      for (let i = 0; i < 4; i++) {
-        const x = W * (0.18 + i * 0.22);
-        const beam = g.createLinearGradient(x, skyH, x, H);
-        beam.addColorStop(0, "#7dfff2");
-        beam.addColorStop(1, "rgba(0,0,0,0)");
-        g.fillStyle = beam;
+      // 光柱渐变按 x 位置缓存，避免每帧为 4 根柱子各建一个渐变
+      if (!beamCache.v || beamCache.v !== gradV || !beamCache.list) {
+        beamCache.v = gradV;
+        beamCache.list = [0, 1, 2, 3].map((i) => {
+          const x = W * (0.18 + i * 0.22);
+          const b = g.createLinearGradient(x, skyH, x, H);
+          b.addColorStop(0, "#7dfff2");
+          b.addColorStop(1, "rgba(0,0,0,0)");
+          return { x, b };
+        });
+      }
+      for (const { x, b } of beamCache.list) {
+        g.fillStyle = b;
         g.fillRect(x - 18, skyH, 36, H * 0.7);
       }
       g.restore();
@@ -2418,23 +2776,23 @@
   }
 
   function renderHud() {
-    $("time").textContent = timeText(state.timeLeft);
+    setText($("time"), timeText(state.timeLeft));
     // 最后 10 秒每秒"滴答"催紧（用秒数取整去重，避免每帧都响）
     if (!state.paused && !state.ended) {
       const sec = Math.ceil(state.timeLeft);
       if (sec <= 10 && sec > 0 && sec !== renderHud._lastTick) { renderHud._lastTick = sec; sfx.tick(); }
       if (sec > 10) renderHud._lastTick = null;
     }
-    $("wx-hud").textContent = wxLine();
     const castLabel = $("btn-cast")?.querySelector(".cast-label");
     if (castLabel) {
-      castLabel.textContent = state.fishing
+      setText(castLabel, state.fishing
         ? (state.phase === "swing" ? "抛竿…" : bonusOn() ? "奖励中" : "跳过·七折")
-        : bonusOn() ? "奖励关" : "下钩";
+        : bonusOn() ? "奖励关" : "下钩");
     }
     const blocked = state.paused || state.ended || state.helpOpen;
     const canPress = !blocked && (state.fishing ? !bonusOn() : (bonusOn() || (state.gold >= castCost() && baitReady())));
-    $("btn-cast").disabled = !canPress;
+    const castBtn = $("btn-cast");
+    if (castBtn.disabled === canPress) castBtn.disabled = !canPress;   // 只在需要时写
     // 自动玩：按钮上显示剩余局数，底部细条显示进度；跑动中禁用其它下注类按钮
     const auto = $("btn-auto");
     if (auto) {
@@ -2442,49 +2800,59 @@
       const running = a.remaining > 0;
       auto.classList.toggle("on", running);
       // 没在跑显示"10"（点一下会开 10 局）；跑动中显示剩余局数
-      auto.querySelector("strong").textContent = String(running ? a.left : 10);
+      setText(auto.querySelector("strong"), running ? a.left : 10);
       auto.style.setProperty("--auto-p", running && a.all ? `${Math.round(((a.all - a.left) / a.all) * 100)}%` : "0%");
-      auto.title = running ? `自动玩进行中 · 剩 ${a.left} 局 · 点一下加局，点"下钩"停止` : "自动玩 · 点一下开始 10 局";
-      auto.disabled = blocked;
+      const tip = running ? `自动玩进行中 · 剩 ${a.left} 局 · 点一下加局，点"下钩"停止` : "自动玩 · 点一下开始 10 局";
+      if (auto.title !== tip) auto.title = tip;
+      if (auto.disabled !== blocked) auto.disabled = blocked;
     }
-    $("btn-charm").disabled = blocked || state.fishing || state.luckyHook || state.gems < 1;
-    $("btn-sonar").disabled = blocked || state.fishing || state.sonar > 0 || state.gems < 1;
-    const sonarGem = $("btn-sonar")?.querySelector(".gem-cost");
-    const sonarTime = $("btn-sonar")?.querySelector(".sonar-time");
+    const charmBtn = $("btn-charm");
+    const charmOff = blocked || state.fishing || state.luckyHook || state.gems < 1;
+    if (charmBtn.disabled !== charmOff) charmBtn.disabled = charmOff;
+    const sonarBtn = $("btn-sonar");
+    const sonarOff = blocked || state.fishing || state.sonar > 0 || state.gems < 1;
+    if (sonarBtn.disabled !== sonarOff) sonarBtn.disabled = sonarOff;
     if (state.sonar > 0) {
-      if (sonarGem) sonarGem.classList.add("hidden");
-      if (sonarTime) {
-        sonarTime.classList.remove("hidden");
-        sonarTime.textContent = `${Math.ceil(state.sonar)}秒`;
-      }
+      sonarBtn.querySelector(".gem-cost")?.classList.add("hidden");
+      const st = sonarBtn.querySelector(".sonar-time");
+      if (st) { st.classList.remove("hidden"); setText(st, `${Math.ceil(state.sonar)}秒`); }
     } else {
-      if (sonarGem) sonarGem.classList.remove("hidden");
-      if (sonarTime) sonarTime.classList.add("hidden");
+      sonarBtn.querySelector(".gem-cost")?.classList.remove("hidden");
+      sonarBtn.querySelector(".sonar-time")?.classList.add("hidden");
     }
-    $("btn-bet").disabled = blocked || state.fishing || bonusOn();
-    $("btn-x3").disabled = blocked || state.fishing || bonusOn();
+    const betOff = blocked || state.fishing || bonusOn();
+    const betBtn = $("btn-bet");
+    const x3Btn = $("btn-x3");
+    if (betBtn.disabled !== betOff) betBtn.disabled = betOff;
+    if (x3Btn.disabled !== betOff) x3Btn.disabled = betOff;
     const kNeed = featureCost("kraken");
     const fNeed = featureCost("frenzy");
     const featOff = blocked || state.fishing || bonusOn();
-    if ($("btn-kraken")) $("btn-kraken").disabled = featOff || state.gold < kNeed;
-    if ($("btn-frenzy")) $("btn-frenzy").disabled = featOff || state.gold < fNeed;
-    $("btn-x3").classList.toggle("on", state.multi === 3);
-    $("btn-x3").querySelector("strong").textContent = state.multi === 3 ? "x3" : "x1";
-    if (!state.dirtyHud) return;
-    $("points").textContent = fmt(state.points);
-    $("gold").textContent = fmt(state.gold);
-    $("gems").textContent = fmt(state.gems);
-    $("goal-hud").textContent = `${state.gotRare ? "✓" : "○"} ${Math.min(state.points, GOAL_POINTS)}`;
-    $("charm-hud").textContent = state.luckyHook ? "开" : "关";
+    const kraken = $("btn-kraken");
+    const frenzy = $("btn-frenzy");
+    if (kraken) { const d = featOff || state.gold < kNeed; if (kraken.disabled !== d) kraken.disabled = d; }
+    if (frenzy) { const d = featOff || state.gold < fNeed; if (frenzy.disabled !== d) frenzy.disabled = d; }
+    x3Btn.classList.toggle("on", state.multi === 3);
+    setText(x3Btn.querySelector("strong"), state.multi === 3 ? "x3" : "x1");
+    // ---- 以下几项随金币/分数每秒都在变，放在 dirty 判断之前，用 setText 去重 ----
+    setText($("points"), fmt(state.points));
+    setText($("gold"), fmt(state.gold));
+    setText($("gems"), fmt(state.gems));
+    setText($("goal-hud"), `${state.gotRare ? "✓" : "○"} ${Math.min(state.points, GOAL_POINTS)}`);
+    setText($("charm-hud"), state.luckyHook ? "开" : "关");
+    setText($("wx-hud"), wxLine());
+    setText($("bite-hud"), biteHudText());
     const fill = $("sonar-fill");
-    if (fill) fill.style.width = `${Math.round(state.sonarPow)}%`;
-    if ($("sonar-txt")) $("sonar-txt").textContent = state.critArmed ? "暴击" : `${Math.round(state.sonarPow)}%`;
+    if (fill) {
+      const w = `${Math.round(state.sonarPow)}%`;
+      if (fill.style.width !== w) fill.style.width = w;
+    }
+    setText($("sonar-txt"), state.critArmed ? "暴击" : `${Math.round(state.sonarPow)}%`);
     const meter = fill && fill.closest(".sonar-meter");
     if (meter) meter.classList.toggle("ready", state.critArmed);
     // 手机上声呐进度条被收进合并按钮里，用 --sonar 让"探鱼"那一半随充能发光
     $("stage").style.setProperty("--sonar", state.critArmed ? 1 : Math.min(1, state.sonarPow / 100));
-    $("wx-hud").textContent = wxLine();
-    $("bite-hud").textContent = biteHudText();
+    if (!state.dirtyHud) return;
     renderCost();
     state.dirtyHud = false;
   }
@@ -3238,26 +3606,30 @@
       updateParticles(dt);
     }
     updateCamera(dt);
-    // 环境音：天气/异象变了就换层；收线时按拍打棘轮声
+    // 环境音：天气/异象变了就换层；收线时棘轮、拉扯时鱼挣扎
     if (audio && !audio.__ambInit) { audio.__ambInit = 1; ambKey = ""; }
-    setAmbient(state.omenId || WEATHERS[state.wx].id, ambForWeather(state.omenId || WEATHERS[state.wx].id));
+    const wxId = state.omenId || WEATHERS[state.wx].id;
+    setAmbient(wxId, wxId);
     if (state.fishing && !state.paused) {
       const isReel = state.lines.some((l) => !l.done && l.phase === "reel") || state.phase === "reel";
       const isTug = state.lines.some((l) => !l.done && (l.phase === "fight" || l.phase === "approach"));
       if (isReel) {
         loop.__reelAcc = (loop.__reelAcc || 0) + dt;
-        if (loop.__reelAcc > 0.075) { loop.__reelAcc = 0; loop.__reelStep = (loop.__reelStep || 0) + 1; sfx.reel(loop.__reelStep, rodOf().reel || 1); }
+        if (loop.__reelAcc > 0.085) { loop.__reelAcc = 0; loop.__reelStep = (loop.__reelStep || 0) + 1; sfx.reel(loop.__reelStep, rodOf().reel || 1); }
       } else if (isTug) {
+        // 鱼挣扎：真实拍水声，间隔带随机，听起来像活物在挣
         loop.__tugAcc = (loop.__tugAcc || 0) + dt;
-        if (loop.__tugAcc > 0.5) { loop.__tugAcc = 0; sfx.tug(); }
+        if (loop.__tugAcc > 0.32 + Math.random() * 0.4) { loop.__tugAcc = 0; sfx.struggle(); if (Math.random() < 0.5) sfx.tug(); }
       } else {
-        // 水面轻拍，稀疏且随机，制造"在等"的感觉
         loop.__idleAcc = (loop.__idleAcc || 0) + dt;
-        if (loop.__idleAcc > 1.4 + Math.random() * 2.6) { loop.__idleAcc = 0; sfx.idleWater(); }
+        if (loop.__idleAcc > 1.8 + Math.random() * 3.2) { loop.__idleAcc = 0; sfx.idleWater(); }
       }
     }
     if (H < 80 || W < 80) resize();
     syncWeatherLook();
+    // 天气过渡期间颜色每帧在变，渐变缓存要跟着失效（过渡只持续约 0.7 秒）
+    const blendStep = Math.round((state.wxBlend == null ? 1 : state.wxBlend) * 24);
+    if (loop._blendStep !== blendStep) { loop._blendStep = blendStep; bumpGrad(); }
     state.wxBlend = Math.min(1, (state.wxBlend || 0) + dt * 1.35);
     if (mixedLook().flash > 0.5 && !state.paused && Math.random() < 0.012) state.wxFlash = 1;
     if (state.wxFlash > 0) state.wxFlash = Math.max(0, state.wxFlash - dt * 5);
@@ -3314,6 +3686,10 @@
     window.addEventListener("pointerdown", unlock, { once: true, capture: true });
     window.addEventListener("keydown", unlock, { once: true, capture: true });
     window.addEventListener("touchstart", unlock, { once: true, capture: true, passive: true });
+    // 首次手势时预加载真实音效（file:// 用 <audio>，见 loadViaAudioEl 注释）
+    const kickLoad = () => { ac(); loadClips(); };
+    window.addEventListener("pointerdown", kickLoad, { once: true, capture: true });
+    window.addEventListener("keydown", kickLoad, { once: true, capture: true });
     // 所有按钮统一加一个轻点击声（面板/开关类自己会再叠音效）
     document.addEventListener("pointerdown", (e) => {
       const b = e.target.closest && e.target.closest("button");
@@ -3457,14 +3833,14 @@
     };
     if ($("btn-sound")) $("btn-sound").onclick = () => {
       SND.on = !SND.on;
-      if (SND.on) { unlockAudio(); if (masterGain) masterGain.gain.value = 0.9; sfx.toggleOn(); }
-      else { if (masterGain) masterGain.gain.value = 0; sfx.toggleOff(); }
+      applyMasterVolume();
+      if (SND.on) { unlockAudio(); sfx.toggleOn(); } else { sfx.toggleOff(); }
       const b = $("btn-sound");
       b.classList.toggle("off", !SND.on);
       b.textContent = SND.on ? "♪" : "✕";
       b.title = SND.on ? "音效：开" : "音效：关";
       ambKey = "";                       // 重新开时让环境层重建
-      if (SND.on) setAmbient(state.omenId || WEATHERS[state.wx].id, ambForWeather(state.omenId || WEATHERS[state.wx].id));
+      if (SND.on) { const wid = state.omenId || WEATHERS[state.wx].id; setAmbient(wid, wid); }
       state.dirtyHud = true;
     };
     $("btn-pause").onclick = () => {
@@ -3564,21 +3940,27 @@
     /* drawers stay collapsed by default so side tabs do not block the water */
   }
 
-  resize();
-  layoutChrome();
+  /* 启动每一步都单独兜底：任何一步出错只记录、不中断后面的初始化。
+     之前踩过坑——某一步抛异常会让整个启动静默中断，
+     表现为画布不画、倒计时不走、按钮全无反应，而且 file:// 下连错误信息都看不到。 */
+  const BOOT = [];
+  const step = (name, fn) => { try { fn(); BOOT.push(name); } catch (e) { BOOT.push(name + ":ERR " + (e && e.message)); } };
+  step("resize", resize);
+  step("layoutChrome", layoutChrome);
   const orient = window.matchMedia("(orientation: portrait)");
   if (orient.addEventListener) orient.addEventListener("change", layoutChrome);
   else if (orient.addListener) orient.addListener(layoutChrome);
-  spawnCreatures();
-  renderShop();
-  renderHud();
-  bind();
-  syncHubBtn();
-  seedTicker();
-  ensureTourney();
+  step("spawnCreatures", spawnCreatures);
+  step("renderShop", renderShop);
+  step("renderHud", renderHud);
+  step("bind", bind);
+  step("syncHubBtn", syncHubBtn);
+  step("seedTicker", seedTicker);
+  step("ensureTourney", ensureTourney);
   if (!sawHelp) {
     state.helpOpen = true;
     $("help-mask").classList.remove("hidden");
   }
+  if (BOOT.some((s) => s.includes(":ERR"))) console.warn("[boot]", BOOT.join(" | "));
   requestAnimationFrame(loop);
 })();
