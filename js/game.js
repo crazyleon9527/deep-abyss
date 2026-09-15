@@ -2,7 +2,7 @@
   /* 构建版本号：只出现在设置面板角落 + 控制台一行，
      **不显示在游戏界面上**（用户明确要求，天气旁边挂个 vXX 太出戏）。
      发版时改这里和 index.html 里的 ?v=。 */
-  const BUILD = "v65";
+  const BUILD = "v66";
   console.log("[Deep Abyss] build " + BUILD);
   /* 元素查询带缓存。原来每次 $() 都走 getElementById——实测静止时每帧 22 次，纯属浪费。
      缓存元素引用；被 innerHTML 重建过的元素 isConnected=false，会自动重查。
@@ -77,6 +77,8 @@
     herring: 1, tetra: 1, moon: 1,
     angler: 2, ray: 2, eel: 2, viper: 2,
     squid: 3, shark: 3, gulper: 3, leviathan: 3,
+    seahorse: 1, clownfish: 1, butterfly: 2, turtle: 2, manta: 2,
+    octopus: 2, puffer: 2, swordfish: 2, lobster: 3, lantern: 3,
   };
   const BETS = [
     { amt: 50, win: 1.15 },
@@ -1833,6 +1835,17 @@
     { kind: "shark", n: 2, y0: 0.62, y1: 0.84, s: [80, 110], x0: 3200, x1: 4700 },
     { kind: "gulper", n: 2, y0: 0.68, y1: 0.88, s: [70, 96], x0: 3600, x1: 4780 },
     { kind: "jelly", n: 6, y0: 0.4, y1: 0.72, s: [22, 34], x0: 80, x1: 4700 },
+    /* 观赏生物：只增海里多样性，不进垂钓/图鉴/奖池体系 */
+    { kind: "seahorse", n: 5, y0: 0.3, y1: 0.46, s: [16, 24], x0: 120, x1: 1500 },
+    { kind: "clownfish", n: 6, y0: 0.34, y1: 0.5, s: [18, 26], x0: 300, x1: 2000 },
+    { kind: "butterfly", n: 4, y0: 0.42, y1: 0.6, s: [30, 42], x0: 900, x1: 2800 },
+    { kind: "turtle", n: 2, y0: 0.46, y1: 0.64, s: [46, 62], x0: 1200, x1: 3200 },
+    { kind: "manta", n: 3, y0: 0.5, y1: 0.68, s: [66, 92], x0: 1600, x1: 3500 },
+    { kind: "octopus", n: 3, y0: 0.55, y1: 0.74, s: [40, 56], x0: 1900, x1: 3600 },
+    { kind: "puffer", n: 3, y0: 0.58, y1: 0.76, s: [30, 42], x0: 2100, x1: 3800 },
+    { kind: "swordfish", n: 2, y0: 0.52, y1: 0.66, s: [70, 96], x0: 2400, x1: 4000 },
+    { kind: "lobster", n: 4, y0: 0.72, y1: 0.9, s: [24, 34], x0: 2800, x1: 4700 },
+    { kind: "lantern", n: 7, y0: 0.68, y1: 0.88, s: [14, 22], x0: 2600, x1: 4700 },
   ];
 
   function spawnCreatures() {
@@ -1855,7 +1868,7 @@
     const n = wx.school || (wx.lureDeep ? 6 : 0);
     if (!n) return;
     const cap = biteDepthCap();
-    const specs = KIND_SPECS.filter((k) => k.kind !== "jelly" && (KIND_DEPTH[k.kind] || 1) <= cap)
+    const specs = KIND_SPECS.filter((k) => fishOf(k.kind) && (KIND_DEPTH[k.kind] || 1) <= cap)
       .sort((a, b) => b.s[1] - a.s[1]);
     if (!specs.length) return;
     for (let i = 0; i < n; i++) {
@@ -2433,6 +2446,196 @@
       g.moveTo(6, 2);
       g.quadraticCurveTo(4, 18, 8, 26);
       g.stroke();
+    } else if (c.kind === "seahorse") {
+      const sway = Math.sin(now * 0.006 + c.phase) * 4;
+      g.strokeStyle = "rgba(140, 225, 160, 0.92)";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(0, -c.s * 0.15, c.s * 0.14, Math.PI * 0.6, Math.PI * 1.5);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(0, -c.s * 0.15);
+      g.quadraticCurveTo(sway, c.s * 0.2, 0, c.s * 0.45);
+      g.quadraticCurveTo(-sway * 0.6, c.s * 0.6, sway * 0.4, c.s * 0.7);
+      g.stroke();
+      g.fillStyle = "rgba(140,225,160,0.9)";
+      g.beginPath();
+      g.arc(0, -c.s * 0.18, 2.4, 0, Math.PI * 2);
+      g.fill();
+    } else if (c.kind === "clownfish") {
+      g.fillStyle = "rgba(240, 140, 60, 0.95)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.5, c.s * 0.3, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "rgba(255, 255, 255, 0.9)";
+      g.fillRect(-c.s * 0.08, -c.s * 0.3, c.s * 0.14, c.s * 0.6);
+      g.fillRect(-c.s * 0.38, -c.s * 0.24, c.s * 0.12, c.s * 0.48);
+      g.beginPath();
+      g.moveTo(-c.s * 0.45, 0);
+      g.lineTo(-c.s * 0.8, -c.s * 0.24);
+      g.lineTo(-c.s * 0.8, c.s * 0.24);
+      g.fill();
+    } else if (c.kind === "butterfly") {
+      g.fillStyle = "rgba(255, 210, 90, 0.95)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.55, c.s * 0.42, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "rgba(40, 30, 20, 0.85)";
+      g.beginPath();
+      g.arc(0, 0, c.s * 0.16, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(40, 30, 20, 0.9)";
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(c.s * 0.2, 0);
+      g.lineTo(c.s * 0.5, 0);
+      g.moveTo(0, -c.s * 0.15);
+      g.lineTo(0, c.s * 0.15);
+      g.stroke();
+    } else if (c.kind === "turtle") {
+      const flipper = Math.sin(now * 0.004 + c.phase) * 6;
+      g.fillStyle = "rgba(70, 140, 90, 0.92)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.55, c.s * 0.42, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(40, 90, 60, 0.9)";
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.arc(0, 0, c.s * 0.3, Math.PI * 0.2, Math.PI * 0.8);
+      g.stroke();
+      g.strokeStyle = "rgba(120, 200, 140, 0.9)";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(c.s * 0.3, -flipper);
+      g.quadraticCurveTo(c.s * 0.7, 0, c.s * 0.55, flipper);
+      g.moveTo(-c.s * 0.3, -flipper);
+      g.quadraticCurveTo(-c.s * 0.7, 0, -c.s * 0.55, flipper);
+      g.stroke();
+      g.fillStyle = "rgba(140, 220, 150, 0.9)";
+      g.beginPath();
+      g.arc(c.s * 0.45, -c.s * 0.3, c.s * 0.2, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "#102018";
+      g.beginPath();
+      g.arc(c.s * 0.45, -c.s * 0.3, 2.4, 0, Math.PI * 2);
+      g.fill();
+    } else if (c.kind === "manta") {
+      const flap = Math.sin(now * 0.005 + c.phase) * 0.3;
+      g.fillStyle = "rgba(60, 80, 140, 0.9)";
+      g.beginPath();
+      g.moveTo(c.s * 0.5, 0);
+      g.quadraticCurveTo(c.s * 0.2, -c.s * 0.4 * (1 + flap), 0, -c.s * 0.18);
+      g.quadraticCurveTo(-c.s * 0.2, -c.s * 0.4 * (1 - flap), -c.s * 0.5, 0);
+      g.quadraticCurveTo(-c.s * 0.2, c.s * 0.4 * (1 - flap), 0, c.s * 0.18);
+      g.quadraticCurveTo(c.s * 0.2, c.s * 0.4 * (1 + flap), c.s * 0.5, 0);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = "rgba(160, 190, 255, 0.5)";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-c.s * 0.1, -c.s * 0.05);
+      g.quadraticCurveTo(-c.s * 0.3, -c.s * 0.2, -c.s * 0.45, -c.s * 0.05);
+      g.moveTo(-c.s * 0.1, c.s * 0.05);
+      g.quadraticCurveTo(-c.s * 0.3, c.s * 0.2, -c.s * 0.45, c.s * 0.05);
+      g.stroke();
+    } else if (c.kind === "octopus") {
+      const w1 = Math.sin(now * 0.008 + c.phase) * 6;
+      const w2 = Math.sin(now * 0.008 + c.phase + 1.5) * 6;
+      g.fillStyle = "rgba(200, 90, 140, 0.9)";
+      g.beginPath();
+      g.arc(0, 0, c.s * 0.32, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(200, 90, 140, 0.85)";
+      g.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + c.phase;
+        const dx = Math.cos(a) * (c.s * 0.25 + (i % 2 ? w1 : w2));
+        const dy = Math.sin(a) * c.s * 0.35;
+        g.beginPath();
+        g.moveTo(Math.cos(a) * c.s * 0.3, Math.sin(a) * c.s * 0.3);
+        g.quadraticCurveTo(dx * 0.6, dy * 0.7, dx, dy);
+        g.stroke();
+      }
+      g.fillStyle = "#fff";
+      g.beginPath();
+      g.arc(-c.s * 0.12, -c.s * 0.08, 2.6, 0, Math.PI * 2);
+      g.arc(c.s * 0.12, -c.s * 0.08, 2.6, 0, Math.PI * 2);
+      g.fill();
+    } else if (c.kind === "puffer") {
+      const puff = Math.sin(now * 0.005 + c.phase) * 2;
+      g.fillStyle = "rgba(240, 190, 90, 0.95)";
+      g.beginPath();
+      g.arc(0, 0, c.s * 0.38 + puff, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "rgba(60, 40, 20, 0.7)";
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + c.phase;
+        g.beginPath();
+        g.arc(Math.cos(a) * (c.s * 0.38 + puff), Math.sin(a) * (c.s * 0.38 + puff), 1.8, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = "#203040";
+      g.beginPath();
+      g.arc(c.s * 0.12, -c.s * 0.06, 2.6, 0, Math.PI * 2);
+      g.fill();
+    } else if (c.kind === "swordfish") {
+      g.fillStyle = "rgba(70, 130, 200, 0.94)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.5, c.s * 0.18, 0, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.moveTo(c.s * 0.45, 0);
+      g.lineTo(c.s * 1.0, -c.s * 0.02);
+      g.lineTo(c.s * 0.45, c.s * 0.05);
+      g.closePath();
+      g.fill();
+      g.beginPath();
+      g.moveTo(-c.s * 0.5, 0);
+      g.lineTo(-c.s * 0.85, -c.s * 0.22);
+      g.lineTo(-c.s * 0.85, c.s * 0.22);
+      g.closePath();
+      g.fill();
+      g.beginPath();
+      g.moveTo(-c.s * 0.05, -c.s * 0.18);
+      g.lineTo(c.s * 0.05, -c.s * 0.42);
+      g.lineTo(c.s * 0.15, -c.s * 0.18);
+      g.fill();
+    } else if (c.kind === "lobster") {
+      const claw = Math.sin(now * 0.006 + c.phase) * 4;
+      g.fillStyle = "rgba(200, 70, 60, 0.92)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.5, c.s * 0.24, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "rgba(200, 70, 60, 0.9)";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(-c.s * 0.3, 0);
+      g.lineTo(-c.s * 0.75, claw * 0.3);
+      g.lineTo(-c.s * 0.75, -c.s * 0.18 + claw * 0.3);
+      g.moveTo(-c.s * 0.3, 0);
+      g.lineTo(-c.s * 0.75, -claw * 0.3);
+      g.lineTo(-c.s * 0.75, c.s * 0.18 - claw * 0.3);
+      g.moveTo(c.s * 0.4, 0);
+      g.lineTo(c.s * 0.85, 0);
+      g.moveTo(c.s * 0.6, -c.s * 0.1);
+      g.lineTo(c.s * 0.75, -c.s * 0.22);
+      g.moveTo(c.s * 0.6, c.s * 0.1);
+      g.lineTo(c.s * 0.75, c.s * 0.22);
+      g.stroke();
+    } else if (c.kind === "lantern") {
+      const flick = Math.sin(now * 0.02 + c.phase) * 0.4 + 0.6;
+      g.fillStyle = "rgba(30, 40, 50, 0.9)";
+      g.beginPath();
+      g.ellipse(0, 0, c.s * 0.4, c.s * 0.2, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = `rgba(255, 240, 140, ${0.6 + flick * 0.4})`;
+      g.beginPath();
+      g.arc(-c.s * 0.35, 0, 3, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = `rgba(160, 200, 255, ${flick})`;
+      g.beginPath();
+      g.arc(c.s * 0.4, 0, 1.6, 0, Math.PI * 2);
+      g.fill();
     } else if (c.kind === "ray") {
       g.fillStyle = "rgba(80,110,200,0.88)";
       g.beginPath();
@@ -2644,7 +2847,7 @@
     let best = null;
     let bestScore = 1e9;
     for (const c of creatures) {
-      if (c.kind === "jelly") continue;
+      if (c.kind === "jelly" || !fishOf(c.kind)) continue;
       if (hookedCreatureOf(c)) continue;
       const depth = KIND_DEPTH[c.kind] || 1;
       if (depth > biteDepthCap()) continue;
@@ -3674,7 +3877,7 @@
         c.vy = Math.max(-0.32, Math.min(0.32, c.vy));
         c.turnT = 0.7 + Math.random() * 2.4;
       }
-      if (attract && c.kind !== "jelly") {
+      if (attract && fishOf(c.kind)) {
         const depth = KIND_DEPTH[c.kind] || 1;
         const dx = hx - c.x;
         const dy = hy - c.y;
